@@ -1,0 +1,7 @@
+# Keep line endings LF in the repository and in every checkout, on every platform.
+* text=auto eol=lf
+
+# Never touch these.
+*.png binary
+*.ico binary
+*.wav binary

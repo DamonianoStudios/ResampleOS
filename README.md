@@ -77,7 +77,7 @@ Press **F1** in the app for the shortcut list.
 
 ## License
 
-No license has been chosen yet. Until one is added to this repository, the usual default applies: all rights reserved.
+ResampleOS is released under the [MIT License](LICENSE).
 
 ## Acknowledgements
 

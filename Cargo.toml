@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "A resample-first pad DAW: commit to audio, capture everything, resample it again."
 readme = "README.md"
+license = "MIT"
 keywords = ["daw", "sampler", "audio", "music", "vst3"]
 categories = ["multimedia::audio"]
 
