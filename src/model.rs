@@ -41,6 +41,8 @@ pub struct PadModel {
     pub mini: Vec<(f32, f32)>,
     /// VST3 instrument, when this is a MIDI pad targeting one.
     pub plugin: Option<PluginSlot>,
+    /// Takes and comp of a vocal pad. Its sample (in `takes`) is the render of this.
+    pub vocal: Option<crate::vocal::VocalStack>,
     /// Onset envelope of one take (identified by its buffer address), kept so that
     /// dragging the sensitivity slider only re-runs the cheap peak-picking.
     onset_cache: Option<(usize, Arc<Vec<f32>>)>,
@@ -91,6 +93,7 @@ impl PadModel {
             && self.takes.len() == other.takes.len()
             && self.takes.iter().zip(&other.takes).all(|(a, b)| Arc::ptr_eq(a, b))
             && self.plugin.as_ref().map(PluginSlot::id) == other.plugin.as_ref().map(PluginSlot::id)
+            && self.vocal == other.vocal
     }
 
     /// A copy for another pad: the active take only, and no plugin, since an instance
@@ -110,6 +113,7 @@ impl PadModel {
             analysis: self.analysis.clone(),
             mini: self.mini.clone(),
             plugin: None,
+            vocal: self.vocal.clone(),
             onset_cache: None,
         }
     }

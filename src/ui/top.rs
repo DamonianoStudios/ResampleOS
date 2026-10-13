@@ -95,6 +95,10 @@ fn transport(app: &mut App, ui: &mut Ui) {
         if ui.add_enabled(app.history.can_redo(), egui::Button::new("Redo")).on_hover_text("Ctrl+Y").clicked() {
             app.redo();
         }
+        let stop = egui::Button::new(egui::RichText::new("Stop All").color(theme::RED));
+        if ui.add(stop).on_hover_text("Shift+Space: stop the transport and silence everything, effect tails included").clicked() {
+            app.stop_all();
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button("Help").on_hover_text("F1").clicked() {
                 app.show_help ^= true;

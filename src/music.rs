@@ -82,6 +82,11 @@ pub struct Key {
 }
 
 impl Key {
+    /// A bit for each pitch class in the key, C first.
+    pub fn mask(&self) -> u16 {
+        self.scale.intervals().iter().fold(0, |m, &i| m | 1 << ((self.root as u16 + i as u16) % 12))
+    }
+
     pub fn contains(self, note: i32) -> bool {
         let pc = (note - self.root as i32).rem_euclid(12);
         self.scale.intervals().contains(&pc)

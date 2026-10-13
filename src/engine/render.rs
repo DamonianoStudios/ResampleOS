@@ -8,6 +8,21 @@ const BUS_SLEEP_SECS: f32 = 20.0;
 
 impl Engine {
     pub(super) fn render_block(&mut self, n: usize) {
+        if self.flush_in != 0 {
+            self.flush_in -= n as i32;
+            // Counted down past zero by a block that has already been rendered.
+            if self.flush_in <= -(n as i32) {
+                self.flush_in = 0;
+                // A synth's own release could be seconds long; a panic means now.
+                for v in self.synths.iter_mut() {
+                    v.active = false;
+                }
+                for fx in self.fx.iter_mut() {
+                    fx.reset();
+                }
+                self.sc_env = [0.0; NUM_BUSES];
+            }
+        }
         for b in self.bufs.iter_mut() {
             b[0][..n].fill(0.0);
             b[1][..n].fill(0.0);
@@ -41,7 +56,8 @@ impl Engine {
                 if left <= 1e-9 {
                     break;
                 }
-                self.next_scene();
+                let frame = self.shared.input_ring.written() + (done / tps) as u64;
+                self.next_scene(frame);
                 t0 = 0.0;
             }
             self.tick = t0;
@@ -336,6 +352,12 @@ impl Engine {
         // mixed into its monitor bus so it can be coloured, resampled and skip-backed.
         self.in_buf[0][..n].fill(0.0);
         self.in_buf[1][..n].fill(0.0);
+        self.read_input(n);
+        // Written even when silent, so positions in this ring always follow the clock.
+        self.shared.input_ring.write(&self.in_buf[0][..n], &self.in_buf[1][..n], &mut self.in_ring_peak);
+    }
+
+    fn read_input(&mut self, n: usize) {
         if let Some(rx) = self.input.as_mut() {
             // If the two devices' clocks drift apart, shed the backlog instead of lagging.
             let limit = (self.sr as f64 * self.in_ratio * 0.2) as usize * 2;
@@ -346,6 +368,8 @@ impl Engine {
                 }
             }
             let mut peak = 0f32;
+            let env_fall = (-1.0 / (0.3 * self.sr)).exp();
+            let fold_step = 1.0 - (-1.0 / (0.005 * self.sr)).exp();
             for i in 0..n {
                 self.in_phase += self.in_ratio;
                 while self.in_phase >= 1.0 {
@@ -359,6 +383,22 @@ impl Engine {
                 let t = self.in_phase as f32;
                 let l = (self.in_prev[0] + (self.in_next[0] - self.in_prev[0]) * t) * self.in_gain;
                 let r = (self.in_prev[1] + (self.in_next[1] - self.in_prev[1]) * t) * self.in_gain;
+                // A microphone on one input of a stereo interface arrives on one side only.
+                // Fold the sides together when that is what is coming in, so it is heard
+                // and recorded in the middle. The verdict holds through silences.
+                self.in_env[0] = l.abs().max(self.in_env[0] * env_fall);
+                self.in_env[1] = r.abs().max(self.in_env[1] * env_fall);
+                let (lo, hi) = (self.in_env[0].min(self.in_env[1]), self.in_env[0].max(self.in_env[1]));
+                if hi > 0.003 {
+                    self.in_one_sided = lo < hi * 0.02;
+                }
+                let want = match self.in_mode {
+                    1 => 0.0,
+                    2 => 1.0,
+                    _ => self.in_one_sided as u8 as f32,
+                };
+                self.in_fold += (want - self.in_fold) * fold_step;
+                let (l, r) = (l + r * self.in_fold, r + l * self.in_fold);
                 self.in_buf[0][i] = l;
                 self.in_buf[1][i] = r;
                 peak = peak.max(l.abs()).max(r.abs());
@@ -378,7 +418,7 @@ impl Engine {
     fn mix_buses(&mut self, n: usize) {
         // Sidechain keys are read before any bus is processed, so a key is always "what is
         // being sent into that bus" regardless of the order buses are mixed in.
-        for src in 0..4 {
+        for src in 0..MASTER {
             if (0..NUM_BUSES).any(|b| self.buses[b].sidechain_source(b) == Some(src)) {
                 let (l, r) = (&self.bufs[src][0], &self.bufs[src][1]);
                 for i in 0..n {
@@ -387,6 +427,16 @@ impl Engine {
             }
         }
 
+        let ctx = FxCtx { bpm: self.bpm, scale: self.scale };
+        // How present the vocal is, read from what is sent into its bus, for the bus that
+        // makes room for it. Like the sidechain keys, taken before anything is processed.
+        let duck_bus = (self.vocal_fx.duck_bus as usize).checked_sub(1).filter(|b| *b < VOCAL);
+        if duck_bus.is_some() {
+            let (l, r) = (&self.bufs[VOCAL][0], &self.bufs[VOCAL][1]);
+            for i in 0..n {
+                self.vox_key[i] = l[i].abs().max(r[i].abs());
+            }
+        }
         // --- Buses in order, so a bus can feed any later bus, then the master.
         for b in 0..NUM_BUSES {
             let cfg = self.buses[b];
@@ -405,12 +455,15 @@ impl Engine {
                     self.bus_idle[b] = self.bus_idle[b].saturating_add(n as u32);
                 }
                 let asleep = self.bus_idle[b] as f32 > self.sr * BUS_SLEEP_SECS;
+                if b == VOCAL && !asleep {
+                    vocal_front_end(&mut self.vox, &self.vocal_fx, self.sr, l, r);
+                }
                 for (s, slot) in cfg.slots.iter().enumerate() {
                     if asleep || !slot.on || slot.kind == FxKind::None {
                         continue;
                     }
                     if slot.kind != FxKind::Vst {
-                        self.fx[b * 3 + s].process(slot.kind, slot.params, slot.sliders, self.bpm, l, r);
+                        self.fx[b * 3 + s].process(slot.kind, slot.params, slot.sliders, ctx, l, r);
                         continue;
                     }
                     let Some(rt) = self.fx_plugins[b * 3 + s].as_mut() else { continue };
@@ -460,11 +513,17 @@ impl Engine {
                     }
                     self.sc_env[b] = env;
                 }
+                if duck_bus == Some(b) {
+                    make_room(&mut self.vox, &self.vox_key[..n], self.sr, l, r);
+                }
                 let gain = if cfg.mute { 0.0 } else { cfg.level };
+                // Balance rather than pan law: what is on a bus is already a stereo image.
+                let pan = cfg.pan.clamp(-1.0, 1.0);
+                let (gl, gr) = (gain * (1.0 - pan).min(1.0), gain * (1.0 + pan).min(1.0));
                 let (mut pl, mut pr) = (0f32, 0f32);
                 for i in 0..n {
-                    l[i] *= gain;
-                    r[i] *= gain;
+                    l[i] *= gl;
+                    r[i] *= gr;
                     pl = pl.max(l[i].abs());
                     pr = pr.max(r[i].abs());
                 }
@@ -495,7 +554,11 @@ impl Engine {
         if self.ring_src == 5 {
             self.shared.ring.write(&self.in_buf[0][..n], &self.in_buf[1][..n], &mut self.ring_peak);
         } else {
-            let src = if self.ring_src == 0 { MASTER } else { self.ring_src as usize - 1 };
+            let src = match self.ring_src {
+                0 => MASTER,
+                6 => VOCAL,
+                s => s as usize - 1,
+            };
             self.shared.ring.write(&self.bufs[src][0][..n], &self.bufs[src][1][..n], &mut self.ring_peak);
         }
         {
@@ -523,6 +586,62 @@ impl Engine {
             }
             self.click_at = -1;
         }
+    }
+}
+
+/// The vocal bus's gate and de-esser, ahead of its effect slots.
+fn vocal_front_end(st: &mut VocalState, cfg: &VocalFx, sr: f32, l: &mut [f32], r: &mut [f32]) {
+    let gating = cfg.gate_db > -79.5;
+    if !gating && cfg.deess <= 0.001 {
+        return;
+    }
+    let open_at = 10f32.powf(cfg.gate_db / 20.0);
+    let env_fall = (-1.0 / (0.08 * sr)).exp();
+    let (gain_up, gain_down) = (1.0 - (-1.0 / (0.002 * sr)).exp(), 1.0 - (-1.0 / (0.15 * sr)).exp());
+    let split = svf_g(5500.0, sr);
+    let follow = 1.0 - (-1.0 / (0.004 * sr)).exp();
+    for i in 0..l.len() {
+        if gating {
+            let level = l[i].abs().max(r[i].abs());
+            st.gate_env = level.max(st.gate_env * env_fall);
+            // Closes a little below where it opens, so a level sitting on the threshold
+            // does not chatter.
+            st.gate_open = st.gate_env > if st.gate_open { open_at * 0.6 } else { open_at };
+            let want = if st.gate_open { 1.0 } else { 0.0 };
+            st.gate_gain += (want - st.gate_gain) * if st.gate_open { gain_up } else { gain_down };
+            l[i] *= st.gate_gain;
+            r[i] *= st.gate_gain;
+        }
+        if cfg.deess > 0.001 {
+            let (_, _, hl) = st.ess[0].tick(l[i], split, 1.414);
+            let (_, _, hr) = st.ess[1].tick(r[i], split, 1.414);
+            st.ess_hi += follow * (hl.abs().max(hr.abs()) - st.ess_hi);
+            st.ess_all += follow * (l[i].abs().max(r[i].abs()) - st.ess_all);
+            // Sibilance is where the top end makes up most of the signal.
+            let excess = (st.ess_hi / (st.ess_all + 1e-6) - 0.35).max(0.0);
+            let cut = (excess * cfg.deess * 4.0).min(0.85);
+            l[i] -= hl * cut;
+            r[i] -= hr * cut;
+        }
+    }
+}
+
+/// Turns the midrange (300 Hz to 3.5 kHz) of a bus down by up to 6 dB while the vocal is
+/// present, leaving its lows and highs alone.
+fn make_room(st: &mut VocalState, key: &[f32], sr: f32, l: &mut [f32], r: &mut [f32]) {
+    let (rise, fall) = (1.0 - (-1.0 / (0.015 * sr)).exp(), (-1.0 / (0.25 * sr)).exp());
+    let (top, bottom) = (svf_g(3500.0, sr), svf_g(300.0, sr));
+    for i in 0..l.len() {
+        // A vocal around -20 dBFS already counts as fully present.
+        let level = (key[i] * 10.0).min(1.0);
+        st.presence = if level > st.presence { st.presence + rise * (level - st.presence) } else { st.presence * fall };
+        let cut = 0.5 * st.presence;
+        let (low, _, _) = st.duck[0].tick(l[i], top, 1.414);
+        let (_, _, mid) = st.duck[1].tick(low, bottom, 1.414);
+        l[i] -= mid * cut;
+        let (low, _, _) = st.duck[2].tick(r[i], top, 1.414);
+        let (_, _, mid) = st.duck[3].tick(low, bottom, 1.414);
+        r[i] -= mid * cut;
     }
 }
 

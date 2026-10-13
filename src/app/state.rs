@@ -22,6 +22,7 @@ pub enum Tab {
     Roll,
     Steps,
     Mod,
+    Vocal,
 }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -63,6 +64,8 @@ pub enum Dest {
 pub enum JobResult {
     Loaded { pad: usize, name: String, sample: SampleData, analysis: Analysis },
     Conformed { pad: usize, sample: SampleData, note: String },
+    /// A pitch-shifted copy of a vocal take, for a play-through lane on `pad`.
+    Shifted { key: (usize, i32), pad: usize, sample: SampleData },
     Failed(String),
 }
 

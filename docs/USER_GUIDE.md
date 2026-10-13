@@ -42,7 +42,11 @@ A pad is one of two kinds:
 - An **audio pad** holds a sample and plays it as a one-shot, gated, or as a latched loop.
 - A **MIDI pad** holds a pattern and plays the internal synth, a VST3 instrument, or another pad's sample at different pitches.
 
-Click a pad or press its key to play it. The pad's settings are in the row under the inspector's tabs: volume, pan, mute, solo, Stop, bus, choke group, play mode and reverse.
+Click a pad or press its key to play it. The pad's settings are in the row under the inspector's tabs: volume, pan, mute, solo, Stop, bus, choke group, play mode and reverse. Drag the pan box sideways (`Shift` for fine) and double-click it to centre.
+
+Hitting a pad again while a long sample (over a second) is still playing restarts it: the copy already playing is faded out, so repeated hits do not pile up. Short hits are left to overlap, and a different note of the same pad (Chromatic mode, a MIDI pad playing it) still layers, so chords work.
+
+**Stop All** in the top bar (`Shift+Space`) stops the transport and silences everything at once, including the tails of the built-in effects. A hosted plugin's own tail (a VST reverb, say) is left to the plugin.
 
 **Play modes** apply to audio pads:
 
@@ -139,7 +143,7 @@ While you are selecting, the display is held still and says so. A click on the b
 
 ### External input
 
-Choose a device under **INPUT** in the footer. Next to it are where the input is heard (Muted, Thru, or a bus, so you can put effects on it) and a gain. To record the input dry, set CAPTURE to Input; it is recorded even when monitoring is muted.
+Choose a device under **INPUT** in the footer. Next to it are where the input is heard (Muted, Thru, or a bus, so you can put effects on it) a gain, and how its two channels are treated. **Auto** centres a source that arrives on one channel only, such as a microphone on input 1 of a stereo interface, and leaves a real stereo source alone; **Stereo** never touches it; **Mono** always sums the two. This applies to what you hear, to Capture and to vocal takes. To record the input dry, set CAPTURE to Input; it is recorded even when monitoring is muted.
 
 ## Sequencing
 
@@ -189,7 +193,7 @@ With **Roll** on (`T`), a held pad retriggers at the rate chosen beside it.
 
 ## Buses and effects
 
-Each pad is sent either straight to the master (**Thru**) or to one of four buses. A bus has three effect slots, a level, and an output that can be the master or a later bus.
+Each pad is sent either straight to the master (**Thru**), to one of four buses, or to the vocal bus, **Bus V**. A bus has three effect slots, a level, a pan (the box beside **SC**: drag sideways, double-click to centre) and an output that can be the master or a later bus. Bus V comes after Bus 1 to 4, so any of them can feed it.
 
 | Effect | Controls |
 | --- | --- |
@@ -202,6 +206,9 @@ Each pad is sent either straight to the master (**Thru**) or to one of four buse
 | FET Comp | Thresh, Ratio, Mix |
 | Tape Delay | Time (tempo-synced), Feedbk, Mix |
 | Reverb | Size, Damp, Mix |
+| Pitch Lock | Retune (slow and natural to instant), Formant (up to 7 semitones either way), Shift (an octave either way). Pulls a single voice onto the project key and scale |
+| Vocal Comp | Level (a slow leveller), Peak (a fast limiter after it), Grit (drive) |
+| Dub Throw | Throw (how much is sent into the echo), Time (tempo-synced), Space (reverb and repeats) |
 
 In the **3-Band EQ**, the low band is a shelf below the **Lo** frequency (40 Hz to 600 Hz) and the high band a shelf above the **Hi** frequency (1.5 kHz to 16 kHz). The mid band is a bell centred halfway between the two, and it narrows as you bring them together. Hover over a slider to read its frequency and where the bell sits. Unlike the DJ Isolator, which can remove a band completely, the EQ is for shaping.
 
@@ -217,6 +224,61 @@ Drag a knob to change it, hold `Shift` for fine control, double-click to reset. 
 - **Depth** sets how far the level moves, and **Release** how quickly it recovers.
 
 The SC button is lit purple when ducking and green when swelling.
+
+## Vocals
+
+A **vocal pad** records takes over the playing loop, lets you build one good performance out of them, and plays the result in time with everything else. Select an empty pad and click **Vocal** at the top right of the inspector, or choose **Make vocal pad** from the pad's right-click menu. Vocal pads are magenta, go to Bus V, and open the **Vocal** tab when selected.
+
+### Recording
+
+1. Choose your microphone under **MIC** and set its gain so the meter moves without lighting the clip light.
+2. Press `Shift+R` (or **ARM**). The pad pulses while it waits.
+3. Press `Space`. From the top of the loop, each time round becomes a new take, drawn in red as it comes in. Sing as many passes as you like.
+4. Press `Space` again to stop. A pass you were part-way through is kept if you got a quarter of the way.
+
+- **Loop / Free:** Loop makes a take per pass of the loop. Free records one continuous take for as long as the transport runs, while you launch loops or play the chain, and marks where each loop took over. A free take plays on across loop changes.
+- **Punch:** drag a range on the ruler, turn Punch on, and only that range is recorded and put into the comp. Click the ruler to clear the range.
+- **Mon:** hear yourself through Bus V while armed. Turn it off if you monitor directly from your audio interface.
+- **Latency (ms):** recorded audio always arrives a little late. Takes are moved earlier by this amount. If your takes sit behind the beat, raise it until they sit on it; the setting is remembered for the machine.
+- While a pad is armed its own comp is silent, so you sing against the beat and not against yourself.
+- **Import…** brings an audio file in as a take.
+- Up to three minutes of input are kept, which is the limit for one free take.
+
+### Comping and editing
+
+The top lane is the **comp**: what the pad plays. Under it are the takes, one colour each, and the comp is drawn in the colours of the takes it comes from. A new take becomes the whole comp until you start choosing by hand.
+
+| Tool | Key | What a drag or click does |
+| --- | --- | --- |
+| Comp | `C` | Swipe across a take: that stretch of it goes into the comp |
+| Move | `D` | Drag a clip in time, or onto another lane. `Alt`+drag slips the audio inside the clip without moving its edges, to tighten timing |
+| Cut | `X` | Click a clip to cut it in two |
+
+- Edges snap to the grid chosen beside the tools (`G` steps through Off, Bar, 1/4, 1/8, 1/16).
+- Click a clip to select it: `M` mutes it, `Backspace` deletes it, `Ctrl+D` repeats it at the next grid line. Right-click a clip for the same actions and **Use this clip in the comp**.
+- `Shift` + a pad key steps the comp through the takes for that sixteenth of the timeline, for comping by ear without the mouse.
+- Every clip edge is faded over 2 ms, and where the comp changes take the two are crossfaded, so cuts do not click.
+- Each lane has **M** (mute), **2x** (double) and **×** (remove), and a level.
+
+**Doubles.** **2x** copies a lane to a **THRU** lane. A take lane is heard only where the comp selects it; a THRU lane always plays alongside the comp. Each has its own level, pan and pitch in cents, and new doubles come panned to alternate sides and detuned a few cents, which is the usual thickening trick. Set the pitch to 1200 or -1200 for an octave harmony. Click **TAKE** or **THRU** on a lane to change what it is. Pitch on a lane moves the formants with it; the Pitch Lock effect on the bus is the one with separate formant control.
+
+### Bus V
+
+The vocal bus starts with **Pitch Lock** (switched off until you want it), **Vocal Comp** and **Dub Throw**. While the Vocal tab is open the footer shows three more controls for it:
+
+- **Gate:** silences the bus below a level, for room noise between phrases.
+- **De-ess:** tames harsh S and T sounds.
+- **Make room:** choose a bus, and while the vocal sounds that bus's midrange (300 Hz to 3.5 kHz) comes down by up to 6 dB. Its lows and highs are untouched, so a sample-heavy bus gets out of the way without the drums ducking.
+
+Bus V can also key the ordinary sidechain of any other bus, and can be chosen as the Capture source.
+
+### Baking
+
+- **To pad** (`Ctrl+B`) flattens the comp and its doubles onto the next empty pad as an ordinary sample.
+- **To bank** (`Ctrl+Shift+B`) cuts the comp at its silences and puts each phrase on its own pad of an empty bank, ready to play as chops.
+- Tick **FX** to print Bus V's built-in effects into the result (hosted plugins are not printed).
+
+The Waveform tab's destructive edits do not apply to a vocal pad, since its audio is rebuilt from the takes. Bake it to a pad first.
 
 ## VST3 plugins
 

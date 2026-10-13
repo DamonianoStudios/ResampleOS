@@ -25,6 +25,7 @@ pub struct Snapshot {
     /// loops, which only changes where the patterns are kept, is not an edit.
     scenes: Vec<Scene>,
     chain: Vec<usize>,
+    vocal_fx: crate::engine::VocalFx,
 }
 
 impl Snapshot {
@@ -60,6 +61,7 @@ impl App {
             pads,
             scenes: self.scenes_complete(),
             chain: self.chain.clone(),
+            vocal_fx: self.vocal_fx,
             banks: self.banks,
             bpm: self.bpm,
             swing: self.swing,
@@ -78,6 +80,7 @@ impl App {
             || self.pads.len() != s.pads.len()
             || self.fx_plugins.iter().map(|p| p.as_ref().map(PluginSlot::id)).ne(s.fx_ids())
             || self.chain != s.chain
+            || self.vocal_fx != s.vocal_fx
             || self.scenes.len() != s.scenes.len()
             || self.pads.iter().zip(&s.pads).any(|(a, b)| !a.same_as(b, false))
             || self.scenes.iter().zip(&s.scenes).enumerate().any(|(i, (a, b))| {
@@ -157,6 +160,8 @@ impl App {
         }
         self.scenes = s.scenes;
         self.chain = s.chain;
+        self.vocal_fx = s.vocal_fx;
+        self.vocal.selected = None;
         self.chain_pos = 0;
         // Which loop is on screen is a matter of view; stay on it if it still exists.
         self.scene = self.scene.min(self.scenes.len() - 1);

@@ -75,6 +75,9 @@ impl App {
                     Key::Y => self.redo(),
                     Key::S => crate::project::save_dialog(self),
                     Key::O => crate::project::open_dialog(self),
+                    Key::D if self.vocal_context() => self.vocal_duplicate_selected(self.selected),
+                    Key::B if self.vocal_context() && shift => self.vocal_bake_to_bank(self.selected),
+                    Key::B if self.vocal_context() => self.vocal_bake_to_pad(self.selected),
                     Key::A if self.tab == Tab::Roll => self.roll_select_all(),
                     Key::D if self.roll_has_selection() => self.roll_duplicate(),
                     Key::C => self.clipboard = Some(self.selected),
@@ -100,6 +103,18 @@ impl App {
                 if matches!(key, Key::ArrowUp | Key::ArrowDown | Key::ArrowLeft | Key::ArrowRight | Key::Delete) {
                     continue;
                 }
+            }
+            // Shift+R arms the selected vocal pad from anywhere.
+            if key == Key::R && shift {
+                self.vocal_arm(self.selected);
+                continue;
+            }
+            if key == Key::Space && shift {
+                self.stop_all();
+                continue;
+            }
+            if self.vocal_context() && self.vocal_key(key, shift) {
+                continue;
             }
             if let Some(i) = PAD_KEYS.iter().position(|&k| k == key) {
                 if self.perform {

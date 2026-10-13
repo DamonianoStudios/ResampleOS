@@ -35,6 +35,17 @@ impl App {
         }
     }
 
+    /// Stops the transport and silences everything at once: playing pads, held notes and
+    /// the tails of the built-in effects.
+    pub fn stop_all(&mut self) {
+        if self.playing() {
+            self.toggle_play();
+        }
+        self.held_keys.clear();
+        self.send(Cmd::Panic);
+        self.status = "Stopped all audio".into();
+    }
+
     /// Semitone offset for the i-th key of a chromatic spread.
     pub fn spread_semis(&self, i: i32) -> f32 {
         let s = match self.conform_mode {
@@ -96,6 +107,13 @@ impl App {
             self.selected = pad;
             self.wave_view = (0.0, 1.0);
             self.roll.drag = None;
+            self.vocal.selected = None;
+            // A vocal pad shows its takes; any other pad has no use for that tab.
+            if self.is_vocal(pad) {
+                self.tab = Tab::Vocal;
+            } else if self.tab == Tab::Vocal {
+                self.tab = Tab::Wave;
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::music::PPQ;
+use std::f32::consts::TAU;
 use rtrb::RingBuffer;
 
 const SR: u32 = 48000;
@@ -297,4 +298,160 @@ fn lfo_shapes_stay_in_range_and_start_together() {
     assert_eq!(lfo_phase(&synced, PPQ as f64 * 3.0, 99.0), 3.0);
     let free = PadCfg { lfo_rate: 2.0, ..PadCfg::default() };
     assert_eq!(lfo_phase(&free, 12345.0, 1.5), 3.0);
+}
+
+#[test]
+fn vocal_gate_closes_on_quiet_input_and_ducking_makes_room() {
+    let (mut e, mut tx, _) = rig();
+    // A quiet hiss into the vocal bus, with the gate set above it.
+    let hiss: Vec<f32> = (0..48000).map(|i| ((i * 7919 % 1000) as f32 / 1000.0 - 0.5) * 0.004).collect();
+    let _ = tx.push(Cmd::SetPadCfg { pad: 0, cfg: PadCfg { bus: 5, ..PadCfg::default() } });
+    let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(Arc::new(SampleData::new(hiss.clone(), hiss))) });
+    let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 0.0, key: 1 });
+    assert!(peak(&run(&mut e, 9600)) > 1e-3, "ungated, the hiss comes through");
+    let _ = tx.push(Cmd::SetVocalFx(VocalFx { gate_db: -30.0, ..VocalFx::default() }));
+    run(&mut e, 4800);
+    assert!(peak(&run(&mut e, 9600)) < 1e-5, "gated, it does not");
+
+    // A mid-range tone on Bus 1 drops by about 6 dB while a vocal plays; a bass tone does not.
+    let level_with_vocal = |hz: f32| {
+        let (mut e, mut tx, _) = rig();
+        let tone: Vec<f32> = (0..96000).map(|i| (i as f32 * hz * TAU / SR as f32).sin() * 0.2).collect();
+        let _ = tx.push(Cmd::SetPadCfg { pad: 0, cfg: PadCfg { bus: 1, pan: -1.0, ..PadCfg::default() } });
+        let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(Arc::new(SampleData::new(tone.clone(), tone))) });
+        // The "vocal" is hard right and silenced on its own bus, so only Bus 1 is heard.
+        let _ = tx.push(Cmd::SetPadCfg { pad: 1, cfg: PadCfg { bus: 5, ..PadCfg::default() } });
+        let _ = tx.push(Cmd::SetSample { pad: 1, sample: Some(tone_at(0.3, 96000)) });
+        let _ = tx.push(Cmd::SetBus { bus: VOCAL as u8, cfg: BusCfg { mute: true, ..BusCfg::default() } });
+        let _ = tx.push(Cmd::SetVocalFx(VocalFx { duck_bus: 1, ..VocalFx::default() }));
+        let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 0.0, key: 1 });
+        let before = peak(&run(&mut e, 24000)[24000..]);
+        let _ = tx.push(Cmd::PadOn { pad: 1, vel: 1.0, semis: 0.0, key: 2 });
+        let during = peak(&run(&mut e, 48000)[48000..]);
+        20.0 * (during / before).log10()
+    };
+    let mid = level_with_vocal(1000.0);
+    assert!((-7.0..-4.5).contains(&mid), "midrange moved {mid} dB");
+    let low = level_with_vocal(70.0);
+    assert!(low.abs() < 0.7, "bass moved {low} dB");
+}
+
+fn tone_at(amp: f32, frames: usize) -> Arc<SampleData> {
+    let v: Vec<f32> = (0..frames).map(|i| (i as f32 * 0.05).sin() * amp).collect();
+    Arc::new(SampleData::new(v.clone(), v))
+}
+
+#[test]
+fn loop_starts_are_marked_in_the_input_ring() {
+    let (mut e, mut tx, shared) = rig();
+    let _ = tx.push(Cmd::SceneLen(TICKS_PER_BAR));
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    run(&mut e, 1000);
+    let _ = tx.push(Cmd::Play(true));
+    // Two and a half bars: the loop has gone round twice, two seconds apart.
+    run(&mut e, SR as usize * 5);
+    assert_eq!(shared.play_starts.load(Ordering::Relaxed), 1);
+    assert_eq!(shared.scene_starts.load(Ordering::Relaxed), 2);
+    let second = shared.loop_frame.load(Ordering::Relaxed);
+    // Play landed after the first 1000 frames.
+    assert!((second as i64 - (1000 + SR as i64 * 4)).abs() <= 1, "{second}");
+}
+
+fn sides(buf: &[f32]) -> (f32, f32) {
+    (
+        buf.iter().step_by(2).fold(0f32, |m, v| m.max(v.abs())),
+        buf.iter().skip(1).step_by(2).fold(0f32, |m, v| m.max(v.abs())),
+    )
+}
+
+#[test]
+fn hitting_a_long_sample_again_restarts_it() {
+    let (mut e, mut tx, _) = rig();
+    let flat = |frames: usize| Arc::new(SampleData::new(vec![0.25; frames], vec![0.25; frames]));
+    let _ = tx.push(Cmd::SetPadCfg { pad: 0, cfg: PadCfg { vol: 1.0, ..PadCfg::default() } });
+    let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(flat(SR as usize * 3)) });
+    for key in 0..6 {
+        let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 0.0, key });
+        run(&mut e, 2400);
+    }
+    let out = run(&mut e, 4800);
+    assert!((peak(&out[4800..]) - 0.25).abs() < 0.01, "copies piled up: {}", peak(&out[4800..]));
+    // A different note of the same pad is a chord, not a retrigger.
+    let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 7.0, key: 9 });
+    let out = run(&mut e, 4800);
+    assert!((peak(&out[4800..]) - 0.5).abs() < 0.01, "second note missing: {}", peak(&out[4800..]));
+
+    // A short hit is allowed to overlap itself.
+    let _ = tx.push(Cmd::SetSample { pad: 1, sample: Some(flat(SR as usize / 2)) });
+    let _ = tx.push(Cmd::SetPadCfg { pad: 1, cfg: PadCfg { vol: 1.0, pan: -1.0, ..PadCfg::default() } });
+    let _ = tx.push(Cmd::Panic);
+    run(&mut e, 2400);
+    for key in 0..2 {
+        let _ = tx.push(Cmd::PadOn { pad: 1, vel: 1.0, semis: 0.0, key });
+        run(&mut e, 2400);
+    }
+    let out = run(&mut e, 2400);
+    assert!(peak(&out[2400..]) > 0.6, "short hits should layer: {}", peak(&out[2400..]));
+}
+
+#[test]
+fn bus_pan_turns_one_side_down() {
+    let (mut e, mut tx, _) = rig();
+    let _ = tx.push(Cmd::SetPadCfg { pad: 0, cfg: PadCfg { bus: 1, ..PadCfg::default() } });
+    let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(tone(48000)) });
+    let _ = tx.push(Cmd::SetBus { bus: 0, cfg: BusCfg { pan: 0.5, ..BusCfg::default() } });
+    let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 0.0, key: 1 });
+    let (left, right) = sides(&run(&mut e, 4800)[4800..]);
+    assert!(right > 0.2 && (left / right - 0.5).abs() < 0.02, "left {left} right {right}");
+    let _ = tx.push(Cmd::SetBus { bus: 0, cfg: BusCfg { pan: -1.0, ..BusCfg::default() } });
+    let (left, right) = sides(&run(&mut e, 4800)[4800..]);
+    assert!(left > 0.2 && right < 1e-6, "left {left} right {right}");
+}
+
+#[test]
+fn a_one_sided_input_is_centred() {
+    let (mut e, mut tx, shared) = rig();
+    let feed = |itx: &mut Producer<f32>, frames: usize, right: f32| {
+        for i in 0..frames {
+            let v = (i as f32 * 0.05).sin() * 0.5;
+            let _ = itx.push(v);
+            let _ = itx.push(v * right);
+        }
+    };
+    let (mut itx, irx) = RingBuffer::new(96000);
+    let _ = tx.push(Cmd::SetInput { rx: Some(irx), ratio: 1.0 });
+    let _ = tx.push(Cmd::InputCfg { dest: 1, gain: 1.0 });
+    feed(&mut itx, 9600, 0.0);
+    let (left, right) = sides(&run(&mut e, 9600)[9600..]);
+    assert!(left > 0.4 && (left - right).abs() < 0.01, "left {left} right {right}");
+    // What is kept for vocal takes is centred too.
+    let (l, r) = shared.input_ring.read(6000, 2000);
+    assert!(l.iter().zip(&r).all(|(a, b)| (a - b).abs() < 0.01));
+
+    // Told to leave it alone, it does.
+    let _ = tx.push(Cmd::InputMode(1));
+    feed(&mut itx, 9600, 0.0);
+    let (left, right) = sides(&run(&mut e, 9600)[9600..]);
+    assert!(left > 0.4 && right < 1e-3, "left {left} right {right}");
+
+    // A real stereo source is not folded.
+    let _ = tx.push(Cmd::InputMode(0));
+    feed(&mut itx, 9600, -0.5);
+    let (left, right) = sides(&run(&mut e, 9600)[9600..]);
+    assert!((left - 0.5).abs() < 0.02 && (right - 0.25).abs() < 0.02, "left {left} right {right}");
+}
+
+#[test]
+fn panic_silences_voices_and_effect_tails() {
+    use crate::fx::FxKind;
+    let (mut e, mut tx, _) = rig();
+    let delay = SlotCfg { params: [0.5, 0.9, 1.0], ..SlotCfg::new(FxKind::Delay, true) };
+    let _ = tx.push(Cmd::SetBus { bus: 0, cfg: BusCfg { slots: [delay, SlotCfg::new(FxKind::None, true), SlotCfg::new(FxKind::None, true)], ..BusCfg::default() } });
+    let _ = tx.push(Cmd::SetPadCfg { pad: 0, cfg: PadCfg { bus: 1, ..PadCfg::default() } });
+    let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(tone(96000)) });
+    let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 0.0, key: 1 });
+    run(&mut e, 48000);
+    let _ = tx.push(Cmd::Panic);
+    let out = run(&mut e, 48000);
+    assert!(peak(&out[2000..]) < 1e-4, "still sounding: {}", peak(&out[2000..]));
 }

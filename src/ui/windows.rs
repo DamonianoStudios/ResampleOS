@@ -205,6 +205,7 @@ fn help(app: &mut App, ctx: &egui::Context) {
     egui::Window::new("Shortcuts").open(&mut open).resizable(false).show(ctx, |ui| {
         let rows: &[(&str, &str)] = &[
             ("Space", "Start / stop transport"),
+            ("Shift + Space", "Stop All: transport, every pad and the effect tails"),
             ("R", "Resample: arm, hit target pad, perform, R to bake"),
             ("S", "Skip-back: last 16 bars to the selected pad (next empty pad if it is in use)"),
             ("Tab", "Waveform <-> Piano Roll"),
@@ -214,6 +215,11 @@ fn help(app: &mut App, ctx: &egui::Context) {
             ("Backspace", "Stop the selected pad's playback"),
             ("G", "Step sequencer for the current bank"),
             ("P", "Perform mode: pad keys and controller pads launch loops"),
+            ("Shift + R", "Vocal pad: arm, then Space records a take each time round the loop"),
+            ("Vocal tab: C / D / X", "Comp, Move and Cut tools. G steps the snap grid"),
+            ("Vocal tab: M, Backspace, Ctrl + D", "Mute, delete or repeat the selected clip"),
+            ("Vocal tab: Shift + pad key", "Step the comp to the next take for that 16th of the loop"),
+            ("Vocal tab: Ctrl + B", "Bake the comp to a pad (with Shift: phrases to a bank)"),
             ("Shift + click a loop", "Add it to the chain"),
             ("Shift + pad", "Select without triggering"),
             ("Ctrl + K", "Key / BPM harmonizer"),

@@ -9,11 +9,13 @@ mod plugins;
 mod roll;
 mod scenes;
 mod state;
+mod vocal;
 
 pub use history::History;
 pub use pads::PadAction;
 pub use scenes::{MAX_CHAIN, MAX_SCENES, Scene};
 pub use state::*;
+pub use vocal::{RecState, VOCAL_SNAPS, VocalDrag, VocalTool, VocalUi};
 
 use play::PendingNote;
 
@@ -27,7 +29,7 @@ use crate::music::{Key, PPQ, Scale, TICKS_PER_BAR, pad_label};
 use crate::plugins::Catalog;
 use crate::prefs::Prefs;
 use crate::sample::{self, SampleData};
-use crate::shared::{MASTER, MAX_BANKS, NUM_BUSES, Shared};
+use crate::shared::{MASTER, MAX_BANKS, NUM_BUSES, Shared, VOCAL};
 use crate::stretch;
 use eframe::egui;
 use rtrb::{Consumer, Producer};
@@ -88,6 +90,8 @@ pub struct App {
     /// Loops to play one after another, by index into `scenes`.
     pub chain: Vec<usize>,
     pub chain_on: bool,
+    /// The vocal bus's gate, de-esser and ducking.
+    pub vocal_fx: crate::engine::VocalFx,
 
     // Session state.
     pub bank: usize,
@@ -131,6 +135,9 @@ pub struct App {
     /// Choke matrix: whether a drag is assigning or clearing.
     pub choke_paint: Option<bool>,
 
+    pub vocal: VocalUi,
+    vocal_work: vocal::VocalWork,
+    sent_scale: u16,
     /// Perform mode: the pad matrix launches loops.
     pub perform: bool,
     /// The loop the engine has been asked to bring in next.
@@ -185,7 +192,11 @@ impl App {
             bpm: 88.0,
             swing: 0.5,
             key: Key { root: 0, scale: Scale::Minor },
-            buses: [BusCfg::default(); NUM_BUSES],
+            buses: {
+                let mut buses = [BusCfg::default(); NUM_BUSES];
+                buses[VOCAL] = BusCfg::vocal();
+                buses
+            },
             conform_mode: ConformMode::Strict,
             auto_conform: false,
             preserve_transients: true,
@@ -194,6 +205,7 @@ impl App {
             scene: 0,
             chain: Vec::new(),
             chain_on: false,
+            vocal_fx: Default::default(),
             bank: 0,
             selected: 0,
             zoom: 0,
@@ -230,6 +242,9 @@ impl App {
             step_bars: 1,
             step_paint: None,
             choke_paint: None,
+            vocal: VocalUi::default(),
+            vocal_work: Default::default(),
+            sent_scale: 0,
             perform: false,
             queued_scene: None,
             chain_pos: 0,
@@ -309,9 +324,13 @@ impl App {
     pub fn push_transport(&mut self) {
         self.send(Cmd::SetBpm(self.bpm));
         self.send(Cmd::SetSwing(self.swing));
+        self.send(Cmd::SetScale(self.key.mask()));
+        self.sent_scale = self.key.mask();
+        self.send(Cmd::SetVocalFx(self.vocal_fx));
         self.send(Cmd::Metronome(self.metronome));
         self.send(Cmd::RingSource(self.ring_src));
         self.send(Cmd::InputCfg { dest: self.input_dest, gain: self.input_gain });
+        self.send(Cmd::InputMode(self.prefs.input_mode));
         self.send(Cmd::Roll { on: self.roll_on, ticks: ROLL_DIVS[self.roll_div].1 });
     }
 
@@ -342,6 +361,12 @@ impl App {
         while self.garbage.pop().is_ok() {}
         self.service_plugins();
         self.poll_scenes();
+        self.vocal_poll();
+        // Effects that follow the project key hear about a change of key.
+        if self.key.mask() != self.sent_scale {
+            self.sent_scale = self.key.mask();
+            self.send(Cmd::SetScale(self.sent_scale));
+        }
 
         while let Ok(job) = self.jobs_rx.try_recv() {
             self.busy = self.busy.saturating_sub(1);
@@ -382,6 +407,7 @@ impl App {
                         self.status = format!("{} {note}", pad_label(pad));
                     }
                 }
+                JobResult::Shifted { key, pad, sample } => self.vocal_shift_done(key, pad, sample),
                 JobResult::Failed(e) => self.status = e,
             }
         }
@@ -455,6 +481,7 @@ impl App {
             || self.busy > 0
             || self.catalog.scanning
             || self.resample != Resample::Idle
+            || self.vocal_armed()
             || !self.editors.is_empty()
             // The LFO scope follows the engine.
             || (self.tab == Tab::Mod && self.pads[self.selected].cfg.lfo_target != crate::engine::LfoTarget::Off)
@@ -470,6 +497,7 @@ impl eframe::App for App {
         self.poll();
         self.keys(&ctx);
         crate::ui::draw(self, ui);
+        self.vocal_commit(&ctx);
         self.track_history(&ctx);
         // Full frame rate while something is moving; otherwise a slow tick is enough to
         // keep the skip-back display scrolling. Input wakes the UI immediately either way.

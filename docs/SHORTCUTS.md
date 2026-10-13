@@ -29,6 +29,7 @@ The sixteen pads of the current bank are on the right-hand side of the keyboard,
 | Shortcut | Action |
 | --- | --- |
 | `Space` | Start or stop the transport |
+| `Shift+Space` | Stop All: stop the transport and silence every pad, held note and built-in effect tail |
 | `R` | Resample: arm, then hit the destination pad, then `R` again to bake |
 | `S` | Skip-back: the last 16 bars to the selected pad, or the next empty pad if it is in use |
 | `Esc` | Cancel a selection or an armed resample, and silence every voice |
@@ -57,6 +58,21 @@ These apply while the piano roll is showing.
 | `Ctrl+D` | Repeat the selected notes directly after themselves |
 | `Delete` | Delete the selected notes |
 | `Esc` | Clear the selection |
+
+## Vocals
+
+`Shift+R` works anywhere; the rest apply while the Vocal tab is showing a vocal pad, where they take the place of their usual meanings.
+
+| Shortcut | Action |
+| --- | --- |
+| `Shift+R` | Arm or disarm the selected pad for vocal takes. Recording follows the transport |
+| `C` / `D` / `X` | Comp, Move and Cut tools |
+| `G` | Step the snap grid: Off, Bar, 1/4, 1/8, 1/16 |
+| `M` | Mute or unmute the selected clip |
+| `Backspace` or `Delete` | Delete the selected clip |
+| `Ctrl+D` | Repeat the selected clip at the next grid line |
+| `Shift` + pad key | Step the comp to the next take for that sixteenth of the timeline |
+| `Ctrl+B` / `Ctrl+Shift+B` | Bake the comp to a pad, or its phrases to a bank |
 
 ## Views
 
@@ -91,6 +107,10 @@ These apply while the piano roll is showing.
 | Loop number | Click | Work on that loop; while playing, line it up to take over at the end of the playing loop |
 | Loop number | `Shift` + click | Add the loop to the chain. Right-click to name or delete it |
 | Chain entry | Click | Remove it from the chain |
+| Take lane | Drag (Comp tool) | Put that stretch of the take in the comp |
+| Vocal clip | Drag (Move tool) | Move in time or to another lane. `Alt` + drag slips the audio inside it |
+| Vocal clip | Click (Cut tool) | Cut in two. Right-click for mute, repeat, delete, use in comp |
+| Vocal ruler | Drag | Mark a range for Punch. Click to clear |
 | Step grid | Click or drag | Paint steps. Right-click a step to cycle normal, accent, soft |
 | Knob | Drag | Change. `Shift` for fine. Double-click to reset |
 | Skip-back bar | Drag | Select a region. Drag the selection onto a pad to capture it |

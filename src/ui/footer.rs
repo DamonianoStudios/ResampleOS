@@ -3,7 +3,7 @@
 use super::{db, theme, toggle};
 use crate::app::{App, ConformMode, ROLL_DIVS};
 use crate::engine::Cmd;
-use crate::shared::{MASTER, f32_load};
+use crate::shared::{MASTER, VOCAL, bus_label, f32_load};
 use eframe::egui::{self, Ui};
 
 pub fn draw(app: &mut App, ui: &mut Ui) {
@@ -14,7 +14,7 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
             .width(70.0)
             .selected_text(src_name(src))
             .show_ui(ui, |ui| {
-                for s in 0..=5u8 {
+                for s in [0, 1, 2, 3, 4, 6, 5u8] {
                     ui.selectable_value(&mut src, s, src_name(s));
                 }
             })
@@ -28,6 +28,11 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
 
         input_controls(app, ui);
 
+        if app.vocal_context() {
+            vocal_controls(app, ui);
+            meters(app, ui);
+            return;
+        }
         if toggle(ui, app.roll_on, "Roll", theme::AMBER).on_hover_text("T: note repeat while a pad is held").clicked() {
             app.toggle_roll();
         }
@@ -66,7 +71,42 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
             .response
             .on_hover_text("Strict: exact semitones. Smart: land on scale degrees (also shapes Chromatic mode).");
         ui.checkbox(&mut app.auto_conform, "Auto on import");
+        meters(app, ui);
+    });
+}
 
+/// The vocal bus's front end, shown in place of the pad-playing controls while a vocal
+/// pad is being worked on.
+fn vocal_controls(app: &mut App, ui: &mut Ui) {
+    let mut fx = app.vocal_fx;
+    theme::caption(ui, "VOCAL BUS");
+    ui.add(egui::DragValue::new(&mut fx.gate_db).speed(0.25).range(-80.0..=-10.0).prefix("Gate ").custom_formatter(|v, _| {
+        if v <= -79.5 { "off".into() } else { format!("{v:.0} dB") }
+    }))
+    .on_hover_text("Noise gate ahead of the vocal bus effects: quieter than this is silenced. Drag down to turn it off.");
+    let mut deess = fx.deess * 100.0;
+    ui.add(egui::DragValue::new(&mut deess).speed(0.5).range(0.0..=100.0).fixed_decimals(0).prefix("De-ess ").suffix("%"))
+        .on_hover_text("Tames harsh S and T sounds");
+    fx.deess = deess / 100.0;
+    let name = |b: u8| if b == 0 { "Off".to_string() } else { bus_label(b as usize - 1) };
+    ui.label(egui::RichText::new("Make room").color(theme::DIM));
+    egui::ComboBox::from_id_salt("vocal_duck")
+        .width(58.0)
+        .selected_text(name(fx.duck_bus))
+        .show_ui(ui, |ui| {
+            for b in 0..=4u8 {
+                ui.selectable_value(&mut fx.duck_bus, b, name(b));
+            }
+        })
+        .response
+        .on_hover_text("While the vocal sounds, turn down the midrange (300 Hz to 3.5 kHz) of this bus by up to 6 dB. Its lows and highs are left alone.");
+    app.set_vocal_fx(fx);
+    ui.separator();
+}
+
+/// Status line and the master's level, pushed to the right-hand end.
+fn meters(app: &mut App, ui: &mut Ui) {
+    {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let s = &app.shared;
             let peak = f32_load(&s.bus_peak[MASTER * 2]).max(f32_load(&s.bus_peak[MASTER * 2 + 1]));
@@ -83,13 +123,14 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
             ui.separator();
             ui.add(egui::Label::new(egui::RichText::new(&app.status).color(theme::DIM)).truncate());
         });
-    });
+    }
 }
 
 fn src_name(s: u8) -> String {
     match s {
         0 => "Master".into(),
         5 => "Input".into(),
+        6 => bus_label(VOCAL),
         s => format!("Bus {s}"),
     }
 }
@@ -98,7 +139,7 @@ fn dest_name(d: u8) -> String {
     match d {
         0 => "Muted".into(),
         1 => "Thru".into(),
-        d => format!("Bus {}", d - 1),
+        d => bus_label(d as usize - 2),
     }
 }
 
@@ -127,13 +168,29 @@ fn input_controls(app: &mut App, ui: &mut Ui) {
             .width(58.0)
             .selected_text(dest_name(dest))
             .show_ui(ui, |ui| {
-                for d in 0..=5u8 {
+                for d in 0..=MASTER as u8 + 1 {
                     ui.selectable_value(&mut dest, d, dest_name(d));
                 }
             })
             .response
             .on_hover_text("Where the input is heard. Muted still records when Capture is set to Input.");
         ui.add(egui::DragValue::new(&mut gain).speed(0.01).range(0.0..=4.0).fixed_decimals(2).prefix("x"));
+        let mut mode = app.prefs.input_mode;
+        egui::ComboBox::from_id_salt("input_mode")
+            .width(52.0)
+            .selected_text(INPUT_MODES[mode as usize % 3])
+            .show_ui(ui, |ui| {
+                for (m, name) in INPUT_MODES.iter().enumerate() {
+                    ui.selectable_value(&mut mode, m as u8, *name);
+                }
+            })
+            .response
+            .on_hover_text("Auto centres a source that arrives on one channel only, such as a microphone on input 1, and leaves a stereo source alone. Stereo never touches it. Mono always sums the two channels.");
+        if mode != app.prefs.input_mode {
+            app.prefs.input_mode = mode;
+            app.send(Cmd::InputMode(mode));
+            let _ = app.prefs.save();
+        }
         if dest != app.input_dest || gain != app.input_gain {
             app.input_dest = dest;
             app.input_gain = gain;
@@ -145,6 +202,8 @@ fn input_controls(app: &mut App, ui: &mut Ui) {
     }
     ui.separator();
 }
+
+const INPUT_MODES: [&str; 3] = ["Auto", "Stereo", "Mono"];
 
 fn mode_name(m: ConformMode) -> &'static str {
     match m {

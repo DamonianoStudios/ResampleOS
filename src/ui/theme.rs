@@ -20,6 +20,9 @@ pub const CYAN: Color32 = Color32::from_rgb(64, 208, 228);
 pub const CYAN_DIM: Color32 = Color32::from_rgb(28, 106, 122);
 pub const RED: Color32 = Color32::from_rgb(255, 70, 92);
 pub const PURPLE: Color32 = Color32::from_rgb(168, 118, 255);
+/// Everything vocal: the vocal bus, vocal pads, takes.
+pub const MAGENTA: Color32 = Color32::from_rgb(255, 92, 196);
+pub const MAGENTA_DIM: Color32 = Color32::from_rgb(138, 44, 104);
 
 /// Linear blend between two colours, `t` in 0..1.
 pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {

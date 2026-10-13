@@ -52,7 +52,7 @@ Things the UI needs to see continuously (meter levels, pad activity, playheads, 
 2. **Voices.** Render sample voices (Hermite interpolation, per-voice filter and envelope) and internal synth voices into their pads' bus buffers.
 3. **Plugins.** Render hosted instruments.
 4. **Input.** Pull external input from the capture thread's ring, rate-matched to the engine.
-5. **Buses.** Process Bus 1 to 4 and then the master. A bus may feed any later bus, which makes cycles impossible by construction. Sidechain keys are measured before any bus is processed, so a key always means "what is being sent into that bus". A bus that has had no input for 20 seconds skips its effect chain until signal returns; buses hosting a plugin are exempt.
+5. **Buses.** Process Bus 1 to 4, the vocal bus, and then the master. A bus may feed any later bus, which makes cycles impossible by construction. Sidechain keys are measured before any bus is processed, so a key always means "what is being sent into that bus". A bus that has had no input for 20 seconds skips its effect chain until signal returns; buses hosting a plugin are exempt.
 6. **Capture.** Write the chosen source to the skip-back ring and meter the master.
 7. **Metronome.** Added last, so it is never captured.
 
@@ -65,6 +65,20 @@ A project has up to sixteen loops: sets of patterns over the same pads. The engi
 A change of loop has to land exactly on the beat, so the UI does not make it. It sends the incoming loop's patterns ahead of time in one `SceneSwap` (`Cmd::QueueScene`). When the playing loop ends, or at the next bar line if the swap asks for that, the engine exchanges the patterns in place, in the middle of a block if need be, and sends the outgoing ones back on the garbage queue. It counts every loop start in `Shared`, and the UI follows: it moves its own model to the loop the engine reports and, if a chain is running, queues the entry after that. The UI has a whole loop in which to do so.
 
 On the UI side the pads always carry the patterns of the loop on screen; the others are kept in `App::scenes` (`src/app/scenes.rs`). Undo snapshots store all patterns with their loops and none on the pads, so moving between loops is not seen as an edit.
+
+### Vocal takes
+
+The engine knows almost nothing about vocals. To it, a vocal pad is an audio pad, and what it adds is small:
+
+- A second ring, `Shared::input_ring`, that always holds the last three minutes of dry input.
+- A mark, `Shared::loop_frame`, of where in that ring the playing loop began, set sample-accurately when Play is pressed and each time a loop starts.
+- The vocal bus's gate, de-esser and midrange ducking (`vocal_front_end` and `make_room` in `render.rs`).
+
+Everything else is on the UI side. `src/vocal.rs` holds the model: a `VocalStack` of lanes, each a list of clips into shared recordings, and a comp that says which take is heard where. `App::vocal_poll` (`src/app/vocal.rs`) watches the loop marks while a pad is armed and cuts each pass out of the ring as a take, shifted by the input latency. Whenever a stack changes it is rendered to one buffer, with a 2 ms equal-power fade at every clip edge and a crossfade where the comp changes take, and that buffer is sent to the engine as the pad's sample. A one-note pattern starts it at the top of the loop. Pitch-shifted copies of takes for play-through lanes are made on a background thread and cached.
+
+Because the stack is part of the pad, undo covers vocal edits like any other.
+
+`src/tune.rs` is the pitch correction used by the Pitch Lock effect: a YIN-style detector on a decimated copy of the input, and pitch-synchronous overlap-add to rebuild the voice at the corrected pitch. Grains are moved to change pitch and read faster or slower to move formants, which is what keeps the two independent.
 
 ### Skip-back
 
@@ -86,6 +100,7 @@ Resample is built on the same ring. Arming records a start position; baking copi
 | `conform.rs` | Harmonizer, warping, baking bus effects |
 | `plugins.rs` | Plugin instances and editor windows |
 | `scenes.rs` | Loops, the chain, launching |
+| `vocal.rs` | Vocal pads: recording takes, editing them, rendering and baking |
 | `roll.rs` | Piano roll selection edits |
 | `history.rs` | Undo and redo |
 | `input.rs` | Keyboard shortcuts and MIDI controller messages |

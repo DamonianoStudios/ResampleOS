@@ -87,6 +87,54 @@ pub fn fader(ui: &mut Ui, value: &mut f32, label: &str, default: f32, color: Col
     resp
 }
 
+/// A pan position as mixers write it: C, or L/R with a percentage.
+pub fn pan_text(pan: f32) -> String {
+    let pct = (pan.abs() * 100.0).round();
+    if pct < 0.5 {
+        "C".into()
+    } else {
+        format!("{}{pct:.0}", if pan < 0.0 { 'L' } else { 'R' })
+    }
+}
+
+/// Compact pan control for -1..1: drag sideways (Shift for fine), double-click to centre.
+/// A marker under the readout shows where it sits.
+pub fn pan_box(ui: &mut Ui, pan: &mut f32, color: Color32, width: f32) -> Response {
+    let (rect, mut resp) = ui.allocate_exact_size(vec2(width, ui.spacing().interact_size.y), Sense::click_and_drag());
+    if resp.dragged() {
+        let fine = if ui.input(|i| i.modifiers.shift) { 0.25 } else { 1.0 };
+        *pan = (*pan + resp.drag_delta().x * 0.01 * fine).clamp(-1.0, 1.0);
+        // Easy to land back on the middle without hunting for it.
+        if pan.abs() < 0.015 {
+            *pan = 0.0;
+        }
+        resp.mark_changed();
+    }
+    if resp.double_clicked() {
+        *pan = 0.0;
+        resp.mark_changed();
+    }
+    let hot = resp.hovered() || resp.dragged();
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, 4.0, if hot { theme::HOVER } else { theme::WELL });
+    let track = rect.shrink2(vec2(5.0, 0.0));
+    let y = rect.bottom() - 3.5;
+    p.hline(track.x_range(), y, Stroke::new(1.0, theme::LINE));
+    p.vline(track.center().x, y - 1.5..=y + 1.5, Stroke::new(1.0, theme::FAINT));
+    let x = track.center().x + *pan * track.width() * 0.5;
+    let lit = if pan.abs() > 0.004 { color } else { theme::DIM };
+    p.line_segment([Pos2::new(track.center().x, y), Pos2::new(x, y)], Stroke::new(2.0, lit));
+    p.circle_filled(Pos2::new(x, y), 2.2, if hot { theme::TEXT } else { lit });
+    p.text(
+        Pos2::new(rect.center().x, rect.top() + 1.5),
+        Align2::CENTER_TOP,
+        pan_text(*pan),
+        FontId::proportional(10.5),
+        if hot { theme::TEXT } else { theme::DIM },
+    );
+    resp.on_hover_text(format!("Pan: {}. Drag sideways, double-click to centre.", pan_text(*pan)))
+}
+
 pub fn db(v: f32) -> f32 {
     20.0 * v.max(1e-6).log10()
 }

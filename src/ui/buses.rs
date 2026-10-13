@@ -1,10 +1,10 @@
-//! Zone C: four performance buses and the master, three effect slots each.
+//! Zone C: four performance buses, the vocal bus and the master, three effect slots each.
 
 use super::{fader, knob, knob_sized, meter, theme, toggle};
 use crate::app::{App, PluginTarget};
 use crate::engine::SlotCfg;
 use crate::fx::FxKind;
-use crate::shared::{MASTER, NUM_BUSES, f32_load};
+use crate::shared::{MASTER, NUM_BUSES, VOCAL, bus_label, f32_load};
 use eframe::egui::{self, Rect, Sense, Ui, vec2};
 
 pub fn draw(app: &mut App, ui: &mut Ui) {
@@ -13,9 +13,17 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     let w = (full.width() - gap * (NUM_BUSES as f32 - 1.0)) / NUM_BUSES as f32;
     for b in 0..NUM_BUSES {
         let rect = Rect::from_min_size(full.min + vec2(b as f32 * (w + gap), 0.0), vec2(w, full.height()));
-        let accent = if b == MASTER { theme::CYAN } else { theme::AMBER };
+        let accent = accent_of(b);
         let border = (app.focus_bus == b).then_some(accent);
         theme::card_in(ui, rect, border, |ui| strip(app, ui, b));
+    }
+}
+
+fn accent_of(b: usize) -> eframe::egui::Color32 {
+    match b {
+        MASTER => theme::CYAN,
+        VOCAL => theme::MAGENTA,
+        _ => theme::AMBER,
     }
 }
 
@@ -28,11 +36,13 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
     let mut cfg = before;
     let focused = app.focus_bus == b;
     let (mut browse, mut editor, mut unload) = (None, None, None);
-    let accent = if b == MASTER { theme::CYAN } else { theme::AMBER };
+    let accent = accent_of(b);
 
     {
         ui.horizontal(|ui| {
-            let title = if b == MASTER { "MASTER".to_string() } else { format!("BUS {}", b + 1) };
+            // Six strips share the row, so the header is packed tight.
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let title = bus_label(b).to_uppercase();
             let text = egui::RichText::new(title).font(theme::bold(12.5)).color(if focused { accent } else { theme::TEXT }).extra_letter_spacing(1.0);
             if ui.add(egui::Label::new(text).sense(Sense::click())).on_hover_text(format!("Focus: key {}", b + 1)).clicked() {
                 app.focus_bus = b;
@@ -41,6 +51,8 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
                 cfg.mute ^= true;
             }
             sidechain_menu(ui, &mut cfg, b);
+            let width = ui.available_width().clamp(26.0, 40.0);
+            super::pan_box(ui, &mut cfg.pan, accent, width);
         });
 
         ui.horizontal(|ui| {
@@ -63,8 +75,8 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
                         ui.checkbox(&mut slot.on, "");
                         let mut kind = slot.kind;
                         egui::ComboBox::from_id_salt(("fx_kind", b, s))
-                            .width(98.0)
-                            .height(360.0)
+                            .width((ui.available_width() - 8.0).clamp(70.0, 98.0))
+                            .height(420.0)
                             .selected_text(
                                 egui::RichText::new(kind.name()).color(if slot_focus { accent } else { theme::TEXT }),
                             )
@@ -108,12 +120,14 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
                             let names = slot.kind.param_names();
                             let defaults = slot.kind.defaults();
                             let col = if slot.on { accent } else { theme::DIM };
-                            // An effect with sliders has five controls in the room of three.
+                            // Knobs take what width the strip has: six strips share the row,
+                            // and an effect with sliders fits five controls where three go.
                             let sliders = slot.kind.slider_names();
-                            let radius = if sliders.is_some() { 8.5 } else { 13.0 };
-                            if sliders.is_some() {
-                                ui.spacing_mut().item_spacing.x = 3.0;
-                            }
+                            let gap = if sliders.is_some() { 3.0 } else { ui.spacing().item_spacing.x.min(6.0) };
+                            ui.spacing_mut().item_spacing.x = gap;
+                            let faders = if sliders.is_some() { 2.0 * (16.0 + gap) } else { 0.0 };
+                            let each = (ui.available_width() - faders - gap * 2.0) / 3.0;
+                            let radius = ((each - 20.0) / 2.0).clamp(7.5, if sliders.is_some() { 8.5 } else { 13.0 });
                             let mut touched = false;
                             for k in 0..3 {
                                 let r = knob_sized(ui, &mut slot.params[k], names[k], defaults[k], col, radius);
@@ -141,7 +155,9 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
                     }
                 }
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().slider_width = 76.0;
+                    // The output menu keeps its width; the fader takes the rest.
+                    let menu = if b != MASTER { 72.0 } else { 0.0 };
+                    ui.spacing_mut().slider_width = (ui.available_width() - menu - 14.0).clamp(36.0, 76.0);
                     ui.add(egui::Slider::new(&mut cfg.level, 0.0..=1.5).show_value(false)).on_hover_text("Bus level");
                     if b != MASTER {
                         egui::ComboBox::from_id_salt(("bus_out", b))
@@ -151,7 +167,7 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
                                 ui.selectable_value(&mut cfg.out, 0, "to Master");
                                 // Only later buses, so the chain can never loop back on itself.
                                 for o in b + 2..=MASTER {
-                                    ui.selectable_value(&mut cfg.out, o as u8, format!("to Bus {o}"));
+                                    ui.selectable_value(&mut cfg.out, o as u8, format!("to {}", bus_label(o - 1)));
                                 }
                             });
                     }
@@ -198,9 +214,9 @@ fn sidechain_menu(ui: &mut Ui, cfg: &mut crate::engine::BusCfg, b: usize) {
         theme::caption(ui, "KEYED BY");
         ui.horizontal(|ui| {
             ui.selectable_value(&mut cfg.sc_src, 0, "Off");
-            for src in 1..=4u8 {
+            for src in 1..=MASTER as u8 {
                 if src as usize - 1 != b {
-                    ui.selectable_value(&mut cfg.sc_src, src, format!("Bus {src}"));
+                    ui.selectable_value(&mut cfg.sc_src, src, bus_label(src as usize - 1));
                 }
             }
         });
@@ -222,5 +238,5 @@ fn sidechain_menu(ui: &mut Ui, cfg: &mut crate::engine::BusCfg, b: usize) {
 }
 
 fn out_name(out: u8, b: usize) -> String {
-    if out as usize > b + 1 && (out as usize) <= MASTER { format!("to Bus {out}") } else { "to Master".into() }
+    if out as usize > b + 1 && (out as usize) <= MASTER { format!("to {}", bus_label(out as usize - 1)) } else { "to Master".into() }
 }

@@ -85,42 +85,45 @@ impl App {
         });
     }
 
+    /// A buffer run through a bus's active effects, with room left for a tail if any of
+    /// them rings on.
+    pub fn through_bus(&self, bus: usize, src: &SampleData) -> SampleData {
+        let slots = self.buses[bus].slots;
+        let sr = self.sr();
+        let ctx = crate::fx::FxCtx { bpm: self.bpm, scale: self.key.mask() };
+        let (mut l, mut r) = (src.l.clone(), src.r.clone());
+        if slots.iter().any(|s| s.on && matches!(s.kind, FxKind::Delay | FxKind::Reverb | FxKind::Throw)) {
+            let extra = (sr * 1.5) as usize;
+            l.resize(l.len() + extra, 0.0);
+            r.resize(r.len() + extra, 0.0);
+        }
+        let mut fx: Vec<Fx> = (0..3).map(|_| Fx::new(sr)).collect();
+        let n = l.len();
+        let mut at = 0;
+        while at < n {
+            let to = (at + 256).min(n);
+            for (i, slot) in slots.iter().enumerate() {
+                // Hosted plugins live in the engine and cannot be run from here.
+                if slot.on && !matches!(slot.kind, FxKind::None | FxKind::Vst) {
+                    fx[i].process(slot.kind, slot.params, slot.sliders, ctx, &mut l[at..to], &mut r[at..to]);
+                }
+            }
+            at = to;
+        }
+        SampleData::new(l, r)
+    }
+
     /// Runs the pad's bus effects into the buffer itself.
     pub fn bake_fx(&mut self, idx: usize) {
-        let bus = match self.pads[idx].cfg.bus {
-            0 => MASTER,
-            b => b as usize - 1,
-        };
-        let slots = self.buses[bus].slots;
-        if !slots.iter().any(|s| s.on && s.kind != FxKind::None) {
-            self.status = "That bus has no active effects to bake".into();
+        let bus = crate::shared::bus_index(self.pads[idx].cfg.bus);
+        if !self.buses[bus].slots.iter().any(|s| s.on && !matches!(s.kind, FxKind::None | FxKind::Vst)) {
+            self.status = "That bus has no built-in effects switched on to bake".into();
             return;
         }
-        let sr = self.sr();
-        let bpm = self.bpm;
-        let tail = slots.iter().any(|s| s.on && matches!(s.kind, FxKind::Delay | FxKind::Reverb));
-        self.bake(idx, "bus FX baked", |src, _| {
-            let mut l = src.l.clone();
-            let mut r = src.r.clone();
-            if tail {
-                let extra = (sr * 1.5) as usize;
-                l.resize(l.len() + extra, 0.0);
-                r.resize(r.len() + extra, 0.0);
-            }
-            let mut fx: Vec<Fx> = (0..3).map(|_| Fx::new(sr)).collect();
-            let n = l.len();
-            let mut at = 0;
-            while at < n {
-                let to = (at + 256).min(n);
-                for (i, slot) in slots.iter().enumerate() {
-                    if slot.on && slot.kind != FxKind::None {
-                        fx[i].process(slot.kind, slot.params, slot.sliders, bpm, &mut l[at..to], &mut r[at..to]);
-                    }
-                }
-                at = to;
-            }
-            SampleData::new(l, r)
-        });
+        let printed = self.pads[idx].sample().map(|s| self.through_bus(bus, s));
+        if let Some(printed) = printed {
+            self.bake(idx, "bus FX baked", |_, _| printed);
+        }
         // Otherwise the pad would run through the same effects a second time.
         if self.pads[idx].cfg.bus != 0 {
             self.pads[idx].cfg.bus = 0;

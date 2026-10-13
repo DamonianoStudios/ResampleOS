@@ -2,6 +2,7 @@
 //! effect type on the audio thread never allocates.
 
 use serde::{Deserialize, Serialize};
+use crate::tune::Tuner;
 use std::f32::consts::PI;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -20,10 +21,16 @@ pub enum FxKind {
     /// Low shelf, mid bell, high shelf. Listed last so projects saved before it existed
     /// still read back the same effects.
     Eq,
+    /// Scale-locked pitch correction with formant control, for a single voice.
+    Tune,
+    /// Vocal dynamics: a slow leveller into a fast peak limiter.
+    VocalComp,
+    /// Dub throw: a send into a tempo-synced echo and a reverb.
+    Throw,
 }
 
 impl FxKind {
-    pub const ALL: [FxKind; 10] = [
+    pub const ALL: [FxKind; 13] = [
         FxKind::None,
         FxKind::Vinyl,
         FxKind::Cassette,
@@ -34,6 +41,9 @@ impl FxKind {
         FxKind::Comp,
         FxKind::Delay,
         FxKind::Reverb,
+        FxKind::Tune,
+        FxKind::VocalComp,
+        FxKind::Throw,
     ];
 
     pub fn name(self) -> &'static str {
@@ -49,6 +59,9 @@ impl FxKind {
             FxKind::Reverb => "Reverb",
             FxKind::Vst => "VST3",
             FxKind::Eq => "3-Band EQ",
+            FxKind::Tune => "Pitch Lock",
+            FxKind::VocalComp => "Vocal Comp",
+            FxKind::Throw => "Dub Throw",
         }
     }
 
@@ -65,6 +78,9 @@ impl FxKind {
             FxKind::Reverb => ["Size", "Damp", "Mix"],
             FxKind::Vst => ["Mix", "", ""],
             FxKind::Eq => ["Low", "Mid", "High"],
+            FxKind::Tune => ["Retune", "Formant", "Shift"],
+            FxKind::VocalComp => ["Level", "Peak", "Grit"],
+            FxKind::Throw => ["Throw", "Time", "Space"],
         }
     }
 
@@ -94,9 +110,33 @@ impl FxKind {
             FxKind::Reverb => [0.5, 0.5, 0.25],
             FxKind::Vst => [1.0, 0.0, 0.0],
             FxKind::Eq => [0.5, 0.5, 0.5],
+            FxKind::Tune => [0.6, 0.5, 0.5],
+            FxKind::VocalComp => [0.5, 0.4, 0.15],
+            FxKind::Throw => [0.0, 0.6, 0.4],
         }
     }
 }
+
+/// What an effect needs to know about the project.
+#[derive(Clone, Copy)]
+pub struct FxCtx {
+    pub bpm: f32,
+    /// A bit for each pitch class of the project scale, C first.
+    pub scale: u16,
+}
+
+/// Semitones of formant shift for the Pitch Lock's Formant knob: up to 7 either way.
+pub fn tune_formant(v: f32) -> f32 {
+    (v - 0.5) * 14.0
+}
+
+/// Semitones of transposition for the Pitch Lock's Shift knob: an octave either way.
+pub fn tune_shift(v: f32) -> i32 {
+    ((v - 0.5) * 24.0).round() as i32
+}
+
+/// Echo times the delays lock to, in beats, shortest first.
+const DELAY_BEATS: [f32; 8] = [0.125, 1.0 / 6.0, 0.25, 1.0 / 3.0, 0.5, 0.75, 1.0, 2.0];
 
 /// How far each EQ band can cut or boost, in dB.
 pub const EQ_RANGE_DB: f32 = 15.0;
@@ -278,6 +318,9 @@ pub struct Fx {
     p: [f32; 3],
     sliders: [f32; 2],
     eq: [Biquad; 3],
+    tuner: Tuner,
+    /// The leveller's slow envelope; the limiter uses `comp_env`.
+    level_env: f32,
     rng: Rng,
 
     // Short modulated delay for wow / flutter.
@@ -339,6 +382,8 @@ impl Fx {
             p: [0.0; 3],
             sliders: [0.0; 2],
             eq: [Biquad::default(); 3],
+            tuner: Tuner::new(sr),
+            level_env: 0.0,
             rng: Rng(0x9E3779B9),
             modl: vec![0.0; MOD_LEN],
             modr: vec![0.0; MOD_LEN],
@@ -365,7 +410,8 @@ impl Fx {
         }
     }
 
-    fn reset(&mut self) {
+    /// Empties every delay line and filter, so nothing rings on.
+    pub fn reset(&mut self) {
         self.modl.fill(0.0);
         self.modr.fill(0.0);
         self.dl.fill(0.0);
@@ -381,6 +427,8 @@ impl Fx {
         }
         self.svf = [Svf::default(); 4];
         self.eq = [Biquad::default(); 3];
+        self.tuner.reset();
+        self.level_env = 0.0;
         self.lp = [0.0; 4];
         self.fb_lp = [0.0; 2];
         self.comp_env = 0.0;
@@ -408,7 +456,8 @@ impl Fx {
 
     /// Processes one block in place. `target` is the slot's three knobs and `sliders` its
     /// two slider parameters, all 0..1.
-    pub fn process(&mut self, kind: FxKind, target: [f32; 3], sliders: [f32; 2], bpm: f32, l: &mut [f32], r: &mut [f32]) {
+    pub fn process(&mut self, kind: FxKind, target: [f32; 3], sliders: [f32; 2], ctx: FxCtx, l: &mut [f32], r: &mut [f32]) {
+        let bpm = ctx.bpm;
         if kind != self.last_kind {
             // The fill is a one-off cost on a type change; no allocation involved.
             self.reset();
@@ -498,6 +547,86 @@ impl Fx {
                     self.lp[1] += lp_a * (b - self.lp[1]);
                     l[i] = self.lp[0];
                     r[i] = self.lp[1];
+                }
+            }
+
+            FxKind::Tune => {
+                // The Retune knob is not smoothed away to nothing: 1.0 has to mean instant.
+                self.tuner.process(target[0], tune_formant(p[1]), tune_shift(target[2]), ctx.scale, l, r);
+            }
+
+            FxKind::VocalComp => {
+                let (level, peak, grit) = (p[0], p[1], p[2]);
+                // Stage one rides the level the way an optical compressor does: slow to
+                // act, slower to let go, and gentle. Stage two catches what gets past it.
+                let level_db = -8.0 - level * 28.0;
+                let peak_db = -1.0 - peak * 14.0;
+                let makeup = 10f32.powf((-level_db * (1.0 - 1.0 / 3.0) * 0.55 - peak_db * 0.4) / 20.0);
+                let slow_up = 1.0 - (-1.0 / (0.012 * sr)).exp();
+                let slow_down = 1.0 - (-1.0 / (0.35 * sr)).exp();
+                let fast_up = 1.0 - (-1.0 / (0.0003 * sr)).exp();
+                let fast_down = 1.0 - (-1.0 / (0.07 * sr)).exp();
+                let drive = 1.0 + grit * 6.0;
+                let trim = 1.0 / drive.tanh().max(0.2) * (1.0 - grit * 0.25);
+                for i in 0..n {
+                    let level = l[i].abs().max(r[i].abs());
+                    let k = if level > self.level_env { slow_up } else { slow_down };
+                    self.level_env += k * (level - self.level_env);
+                    let over = (20.0 * self.level_env.max(1e-6).log10() - level_db).max(0.0);
+                    let g1 = 10f32.powf(-over * (1.0 - 1.0 / 3.0) / 20.0);
+
+                    let after = level * g1;
+                    let k = if after > self.comp_env { fast_up } else { fast_down };
+                    self.comp_env += k * (after - self.comp_env);
+                    let over = (20.0 * self.comp_env.max(1e-6).log10() - peak_db).max(0.0);
+                    let g = g1 * 10f32.powf(-over * (1.0 - 1.0 / 12.0) / 20.0) * makeup;
+
+                    l[i] = (l[i] * g * drive).tanh() * trim;
+                    r[i] = (r[i] * g * drive).tanh() * trim;
+                }
+            }
+
+            FxKind::Throw => {
+                // Throw is the send into the echo, not its level: bring it up on a word and
+                // back down, and that word alone repeats away into the reverb.
+                let (throw, time, space) = (p[0], p[1], p[2]);
+                let idx = ((time * 7.999) as usize).min(7);
+                let len = self.dl.len();
+                let want = (DELAY_BEATS[idx] * 60.0 / bpm.max(20.0) * sr).min((len - 4) as f32);
+                if self.delay_cur < 1.0 {
+                    self.delay_cur = want;
+                }
+                let feedback = 0.35 + space * 0.4;
+                let (room, damp) = (0.78 + space * 0.16, 0.25);
+                for i in 0..n {
+                    self.delay_cur += (want - self.delay_cur) * 0.0004;
+                    let rp = self.dw as f32 + len as f32 - self.delay_cur;
+                    let j = rp as usize;
+                    let t = rp - j as f32;
+                    let (a, b) = (j % len, (j + 1) % len);
+                    let wl = self.dl[a] + (self.dl[b] - self.dl[a]) * t;
+                    let wr = self.dr[a] + (self.dr[b] - self.dr[a]) * t;
+                    self.fb_lp[0] += 0.3 * (wl - self.fb_lp[0]);
+                    self.fb_lp[1] += 0.3 * (wr - self.fb_lp[1]);
+                    // The echoes cross sides as they repeat.
+                    self.dl[self.dw] = l[i] * throw + (self.fb_lp[1] * feedback).tanh();
+                    self.dr[self.dw] = r[i] * throw + (self.fb_lp[0] * feedback).tanh();
+                    self.dw = (self.dw + 1) % len;
+
+                    let input = (wl + wr) * 0.015;
+                    let mut wet = [0f32; 2];
+                    for (ch, out) in wet.iter_mut().enumerate() {
+                        let mut acc = 0.0;
+                        for c in &mut self.combs[ch] {
+                            acc += c.tick(input, room, damp);
+                        }
+                        for a in &mut self.allpasses[ch] {
+                            acc = a.tick(acc);
+                        }
+                        *out = acc;
+                    }
+                    l[i] += wl + wet[0] * space * 2.5;
+                    r[i] += wr + wet[1] * space * 2.5;
                 }
             }
 
@@ -605,10 +734,9 @@ impl Fx {
             FxKind::Delay => {
                 let (time, fb, mix) = (p[0], p[1], p[2]);
                 // Tempo-synced divisions, in beats.
-                const DIVS: [f32; 8] = [0.125, 1.0 / 6.0, 0.25, 1.0 / 3.0, 0.5, 0.75, 1.0, 2.0];
                 let idx = ((time * 7.999) as usize).min(7);
                 let len = self.dl.len();
-                let want = (DIVS[idx] * 60.0 / bpm.max(20.0) * sr).min((len - 4) as f32);
+                let want = (DELAY_BEATS[idx] * 60.0 / bpm.max(20.0) * sr).min((len - 4) as f32);
                 if self.delay_cur < 1.0 {
                     self.delay_cur = want;
                 }
@@ -672,7 +800,7 @@ mod tests {
             let mut l: Vec<f32> = (0..256).map(|i| ((block * 256 + i) as f32 * 2.0 * PI * hz / sr).sin()).collect();
             let mut r = l.clone();
             let before: f64 = l.iter().map(|v| (*v as f64).powi(2)).sum();
-            fx.process(FxKind::Eq, params, sliders, 120.0, &mut l, &mut r);
+            fx.process(FxKind::Eq, params, sliders, FxCtx { bpm: 120.0, scale: 0 }, &mut l, &mut r);
             if block > 150 {
                 dry += before;
                 wet += r.iter().map(|v| (*v as f64).powi(2)).sum::<f64>();
@@ -719,5 +847,47 @@ mod tests {
         // 300 Hz is inside a low shelf set to 600 Hz and outside one set to 40 Hz.
         assert!(eq_gain(300.0, [1.0, 0.5, 0.5], [1.0, 0.5]) > 9.0);
         assert!(eq_gain(300.0, [1.0, 0.5, 0.5], [0.0, 0.5]) < 2.0);
+    }
+
+    fn sine(hz: f32, amp: f32, frames: usize) -> Vec<f32> {
+        (0..frames).map(|i| (i as f32 * 2.0 * PI * hz / 48000.0).sin() * amp).collect()
+    }
+
+    fn through(kind: FxKind, params: [f32; 3], input: &[f32]) -> Vec<f32> {
+        let mut fx = Fx::new(48000.0);
+        let mut out = Vec::new();
+        for block in input.chunks(256) {
+            let (mut l, mut r) = (block.to_vec(), block.to_vec());
+            fx.process(kind, params, [0.0; 2], FxCtx { bpm: 120.0, scale: 0 }, &mut l, &mut r);
+            out.extend(l);
+        }
+        out
+    }
+
+    fn rms(x: &[f32]) -> f32 {
+        (x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32).sqrt()
+    }
+
+    #[test]
+    fn vocal_comp_evens_out_loud_and_quiet() {
+        let params = FxKind::VocalComp.defaults();
+        let quiet = rms(&through(FxKind::VocalComp, params, &sine(300.0, 0.05, 48000))[24000..]);
+        let loud = rms(&through(FxKind::VocalComp, params, &sine(300.0, 0.8, 48000))[24000..]);
+        // 24 dB apart going in; much closer coming out, and never over full scale.
+        let spread = 20.0 * (loud / quiet).log10();
+        assert!(spread < 14.0, "still {spread} dB apart");
+        assert!(loud < 1.0 && quiet > 0.05);
+    }
+
+    #[test]
+    fn throw_only_echoes_what_was_sent() {
+        let burst: Vec<f32> = sine(500.0, 0.5, 4800).into_iter().chain(std::iter::repeat_n(0.0, 96000)).collect();
+        // With the send down the signal passes untouched and nothing follows it.
+        let dry = through(FxKind::Throw, [0.0, 0.6, 0.4], &burst);
+        assert!(rms(&dry[9600..]) < 1e-5);
+        assert!((rms(&dry[..4800]) - rms(&burst[..4800])).abs() < 1e-4);
+        // With it up, echoes carry on after the burst has ended.
+        let wet = through(FxKind::Throw, [1.0, 0.6, 0.4], &burst);
+        assert!(rms(&wet[24000..72000]) > 0.01);
     }
 }

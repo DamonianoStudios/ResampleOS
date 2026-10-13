@@ -7,8 +7,25 @@ pub const PADS_PER_BANK: usize = 16;
 pub const MAX_BANKS: usize = 64;
 pub const MAX_PADS: usize = PADS_PER_BANK * MAX_BANKS;
 /// Buses 0..4 are Bus 1-4, index 4 is the master.
-pub const NUM_BUSES: usize = 5;
-pub const MASTER: usize = 4;
+pub const NUM_BUSES: usize = 6;
+/// The vocal bus sits after Bus 1-4, so any of them can feed it, and before the master.
+pub const VOCAL: usize = 4;
+pub const MASTER: usize = 5;
+
+/// Display name of a bus by index.
+pub fn bus_label(bus: usize) -> String {
+    match bus {
+        MASTER => "Master".into(),
+        VOCAL => "Bus V".into(),
+        b => format!("Bus {}", b + 1),
+    }
+}
+
+/// Index of the bus a pad's `bus` setting (0 = thru, then 1-based) or an input's monitor
+/// destination points at.
+pub fn bus_index(bus: u8) -> usize {
+    if (1..=MASTER as u8).contains(&bus) { bus as usize - 1 } else { MASTER }
+}
 pub const PEAK_HOP: usize = 512;
 
 const R: Ordering = Ordering::Relaxed;
@@ -97,9 +114,20 @@ impl SkipBack {
     }
 }
 
+/// Seconds of dry input kept for vocal takes: enough for sixteen bars at 40 BPM, or a
+/// free pass of three minutes.
+pub const INPUT_RING_SECS: usize = 180;
+
 pub struct Shared {
     pub sample_rate: u32,
     pub ring: SkipBack,
+    /// The external input as it arrives, before monitoring or effects. Vocal takes are cut
+    /// from this.
+    pub input_ring: SkipBack,
+    /// Position in `input_ring` at which the playing loop last started.
+    pub loop_frame: AtomicU64,
+    /// Counts presses of Play, so a recording can tell a fresh start from a loop going round.
+    pub play_starts: AtomicU32,
     /// Per-pad activity (envelope level of its loudest voice), 0 when idle.
     pub pad_level: Box<[AtomicU32]>,
     /// Per-pad playhead in frames, `u32::MAX` when idle.
@@ -140,6 +168,9 @@ impl Shared {
         Shared {
             sample_rate,
             ring: SkipBack::new(sample_rate, skipback_seconds),
+            input_ring: SkipBack::new(sample_rate, INPUT_RING_SECS),
+            loop_frame: AtomicU64::new(0),
+            play_starts: AtomicU32::new(0),
             pad_level: (0..MAX_PADS).map(|_| AtomicU32::new(0)).collect(),
             pad_pos: (0..MAX_PADS).map(|_| AtomicU32::new(u32::MAX)).collect(),
             bus_peak: std::array::from_fn(|_| AtomicU32::new(0)),

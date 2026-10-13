@@ -1,7 +1,7 @@
 //! Zone A: bank tabs and the pad matrix.
 
 use super::{pill, tag, theme};
-use crate::app::{App, PAD_KEY_LABELS, PluginTarget, Resample};
+use crate::app::{App, PAD_KEY_LABELS, PluginTarget, RecState, Resample};
 use crate::engine::PadKind;
 use crate::music::{bank_name, pad_label};
 use crate::shared::f32_load;
@@ -147,6 +147,11 @@ fn pad_cell(app: &mut App, ui: &mut Ui, rect: Rect, idx: usize) {
             ui.close();
         }
         let kind = app.pads[idx].cfg.kind;
+        if kind != PadKind::Vocal && app.pads[idx].is_empty() && ui.button("Make vocal pad").clicked() {
+            app.select(idx);
+            app.make_vocal(idx);
+            ui.close();
+        }
         if kind == PadKind::Audio && ui.button("Make MIDI / piano roll pad").clicked() {
             app.set_kind(idx, PadKind::Midi);
             app.select(idx);
@@ -182,15 +187,24 @@ fn pad_cell(app: &mut App, ui: &mut Ui, rect: Rect, idx: usize) {
     let armed = app.resample == Resample::Armed;
     let empty = pad.is_empty();
 
+    let vocal_rec = app.rec_state(idx);
     // LED colour, by the spec's priority.
     let led = if rec_target && blink {
         theme::RED
+    } else if vocal_rec == RecState::Recording {
+        // Recording a take: flashing white and magenta.
+        if blink { theme::TEXT } else { theme::MAGENTA }
+    } else if vocal_rec == RecState::Waiting {
+        // Armed and waiting for the downbeat: pulsing magenta.
+        if blink { theme::MAGENTA } else { theme::MAGENTA_DIM }
     } else if level > 0.0 {
         theme::GREEN
     } else if pad.cfg.mute || pad.cfg.choke > 0 {
         theme::PURPLE
     } else if pad.cfg.kind == PadKind::Midi {
         theme::CYAN_DIM
+    } else if pad.cfg.kind == PadKind::Vocal {
+        if pad.vocal.as_ref().is_some_and(|v| !v.is_empty()) { theme::MAGENTA } else { theme::MAGENTA_DIM }
     } else if !empty {
         theme::AMBER_DIM
     } else {
@@ -258,7 +272,7 @@ fn pad_cell(app: &mut App, ui: &mut Ui, rect: Rect, idx: usize) {
     if inner.height() > 6.0 {
         let content = if level > 0.0 { theme::GREEN } else { led };
         match pad.cfg.kind {
-            PadKind::Audio => {
+            PadKind::Audio | PadKind::Vocal => {
                 let n = pad.mini.len();
                 let mid = inner.center().y;
                 for (i, (lo, hi)) in pad.mini.iter().enumerate() {
@@ -304,7 +318,7 @@ fn pad_cell(app: &mut App, ui: &mut Ui, rect: Rect, idx: usize) {
     // Bottom tags: bus target, choke group, mute/solo, and the computer key that plays it.
     if !empty {
         let at = |x: f32| Pos2::new(x, rect.bottom() - 19.0);
-        let bus = if pad.cfg.bus == 0 { "THRU".to_string() } else { format!("BUS {}", pad.cfg.bus) };
+        let bus = if pad.cfg.bus == 0 { "THRU".to_string() } else { crate::shared::bus_label(pad.cfg.bus as usize - 1).to_uppercase() };
         let mut x = tag(&p, at(rect.left() + 7.0), &bus, theme::TEXT, theme::BG.gamma_multiply(0.6)) + 4.0;
         if pad.cfg.choke > 0 {
             x = tag(&p, at(x), &format!("CK {}", pad.cfg.choke), theme::BG, theme::PURPLE) + 4.0;

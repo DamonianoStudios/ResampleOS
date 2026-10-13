@@ -16,6 +16,8 @@ mod sample;
 mod shared;
 mod stretch;
 mod synth;
+mod tune;
+mod vocal;
 mod ui;
 
 use eframe::egui;

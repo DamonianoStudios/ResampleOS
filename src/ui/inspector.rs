@@ -4,6 +4,7 @@ use super::{pill, roll, steps, theme, toggle};
 use crate::app::{App, PadAction, Tab};
 use crate::engine::{PadCfg, PadKind, PlayMode};
 use crate::music::pad_label;
+use crate::shared::{MASTER, bus_label};
 use eframe::egui::{self, Align2, Color32, FontId, PointerButton, Pos2, Rect, Sense, Stroke, Ui, vec2};
 
 /// Settings are edited on a copy and committed once at the end; anything that rewrites
@@ -16,12 +17,16 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     let mut action = None;
 
     ui.horizontal(|ui| {
-        let accent = if cfg.kind == PadKind::Midi { theme::CYAN } else { theme::AMBER };
+        let accent = match cfg.kind {
+            PadKind::Midi => theme::CYAN,
+            PadKind::Vocal => theme::MAGENTA,
+            PadKind::Audio => theme::AMBER,
+        };
         ui.label(egui::RichText::new(pad_label(sel)).font(theme::bold(22.0)).color(accent));
         ui.add(egui::TextEdit::singleline(&mut app.pads[sel].name).desired_width(130.0).hint_text("name"));
         ui.add_space(6.0);
         ui.spacing_mut().item_spacing.x = 2.0;
-        for (tab, label) in [(Tab::Wave, "Waveform"), (Tab::Roll, "Piano Roll"), (Tab::Steps, "Steps"), (Tab::Mod, "Mod / Warp")] {
+        for (tab, label) in [(Tab::Wave, "Waveform"), (Tab::Roll, "Piano Roll"), (Tab::Steps, "Steps"), (Tab::Mod, "Mod / Warp"), (Tab::Vocal, "Vocal")] {
             if pill(ui, app.tab == tab, label).clicked() {
                 app.tab = tab;
                 if tab == Tab::Roll {
@@ -30,6 +35,9 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
             }
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if pill(ui, cfg.kind == PadKind::Vocal, "Vocal").clicked() && cfg.kind != PadKind::Vocal {
+                action = Some(PadAction::SetKind(PadKind::Vocal));
+            }
             if pill(ui, cfg.kind == PadKind::Midi, "MIDI").clicked() && cfg.kind != PadKind::Midi {
                 action = Some(PadAction::SetKind(PadKind::Midi));
             }
@@ -47,7 +55,7 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
         ui.label("Vol");
         ui.add(egui::Slider::new(&mut cfg.vol, 0.0..=1.5).show_value(false));
         ui.label("Pan");
-        ui.add(egui::Slider::new(&mut cfg.pan, -1.0..=1.0).show_value(false));
+        super::pan_box(ui, &mut cfg.pan, theme::AMBER, 40.0);
         if toggle(ui, cfg.mute, "M", theme::RED).on_hover_text("Mute (hold M + pad)").clicked() {
             cfg.mute ^= true;
         }
@@ -62,7 +70,7 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
             .width(58.0)
             .selected_text(bus_name(cfg.bus))
             .show_ui(ui, |ui| {
-                for b in 0..=4u8 {
+                for b in 0..=MASTER as u8 {
                     ui.selectable_value(&mut cfg.bus, b, bus_name(b));
                 }
             });
@@ -88,11 +96,11 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     ui.separator();
 
     // The roll and step tabs edit the pad themselves, so they get the committed settings.
-    let own_editor = matches!(app.tab, Tab::Roll | Tab::Steps);
+    let own_editor = matches!(app.tab, Tab::Roll | Tab::Steps | Tab::Vocal);
     match app.tab {
         Tab::Wave => action = wave_tab(app, ui, &mut cfg).or(action),
         Tab::Mod => super::modwarp::draw(app, ui, &mut cfg),
-        Tab::Roll | Tab::Steps => {}
+        Tab::Roll | Tab::Steps | Tab::Vocal => {}
     }
     if cfg != before {
         app.pads[sel].cfg = cfg;
@@ -104,13 +112,14 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     if own_editor {
         match app.tab {
             Tab::Roll => roll::draw(app, ui),
+            Tab::Vocal => super::vocal::draw(app, ui),
             _ => steps::draw(app, ui),
         }
     }
 }
 
 fn bus_name(b: u8) -> String {
-    if b == 0 { "Thru".into() } else { format!("Bus {b}") }
+    if b == 0 { "Thru".into() } else { bus_label(b as usize - 1) }
 }
 
 fn mode_name(m: PlayMode) -> &'static str {

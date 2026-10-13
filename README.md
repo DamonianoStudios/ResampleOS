@@ -18,7 +18,8 @@ ResampleOS is a pad-based DAW built around committing to audio. Linear DAWs make
 - **Transient chop.** One key spreads a sample's slices across the next empty bank.
 - **Piano roll and step sequencer.** Scale-locked piano roll with a velocity lane and free microtiming; a step grid per bank for drum patterns; swing and humanize on top.
 - **Loops, chain and perform mode.** Up to sixteen loops of 1 to 16 bars over the same pads, switched on the beat, chained into an arrangement, or launched live from the pads.
-- **Performance buses.** Four buses and a master, three effect slots each: vinyl, cassette, 3-band EQ, DJ isolator and filter, bit-crush, compressor, tape delay, reverb. Buses can feed later buses and can be sidechained from one another.
+- **Vocal takes.** A vocal pad records a take each time round the loop, with swipe comping, cut, move and slip editing, doubles, and baking to a pad or to a bank of phrases. A dedicated vocal bus has scale-locked pitch correction, levelling and a dub throw.
+- **Performance buses.** Four buses, a vocal bus and a master, three effect slots each: vinyl, cassette, 3-band EQ, DJ isolator and filter, bit-crush, compressor, tape delay, reverb. Buses can feed later buses and can be sidechained from one another.
 - **VST3 hosting.** Instruments on pads and effects on buses, with a scanner that copes with libraries of a thousand plugins or more.
 - **External input**, **MIDI controllers**, **project-wide undo and redo**.
 
@@ -78,9 +79,11 @@ Press **F1** in the app for the shortcut list.
 - Some VST3 effects load and show their editor but pass no audio. In testing this affected three of fourteen vendors. A silent effect mutes its bus.
 - Hosted plugins are not crash-isolated once loaded; only scanning is.
 - Changing the audio device, sample rate, buffer size or skip-back length takes effect after a restart.
-- Pitch warps move formants with the pitch; there is no independent formant control.
+- Pitch warps and vocal doubles move formants with the pitch. Only the Pitch Lock effect has separate formant control.
+- Vocal recording has no automatic latency measurement: the input latency is set by hand. Monitoring through the app is as fast as the audio device allows, which on shared-mode Windows audio is not instant.
+- The pitch correction and the vocal comp tools were verified with test signals and imported audio, not with a live microphone.
 - Projects store each pad's active take, not its whole take stack.
-- Hardware controllers get no LED feedback.
+- Hardware controllers get no LED feedback, and there is no controller mapping for vocal comping (the keyboard has one).
 
 ## License
 

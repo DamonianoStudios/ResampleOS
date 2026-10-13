@@ -14,7 +14,7 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
     let target_name = match app.browser.target {
         PluginTarget::Pad(i) => format!("instrument for pad {}", pad_label(i)),
         PluginTarget::Fx(b, s) => {
-            let bus = if b == crate::shared::MASTER { "Master".to_string() } else { format!("Bus {}", b + 1) };
+            let bus = crate::shared::bus_label(b);
             format!("effect for {bus}, slot {}", s + 1)
         }
     };

@@ -13,6 +13,9 @@ use std::sync::Arc;
 pub enum PadKind {
     Audio,
     Midi,
+    /// A stack of vocal takes. To the engine it is an audio pad playing the comp; the takes
+    /// and the edits live on the UI side.
+    Vocal,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -88,7 +91,7 @@ pub struct PadCfg {
     pub solo: bool,
     /// 0 = off, 1..=32.
     pub choke: u8,
-    /// 0 = thru (straight to master), 1..=4 = bus.
+    /// 0 = thru (straight to master), 1..=4 = bus, 5 = the vocal bus.
     pub bus: u8,
     /// Semitones, coarse + fine.
     pub pitch: f32,
@@ -174,6 +177,9 @@ impl SlotCfg {
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub struct BusCfg {
     pub level: f32,
+    /// -1..1, a balance control: turning it one way brings the other side down.
+    #[serde(default)]
+    pub pan: f32,
     pub mute: bool,
     /// 0 = master, otherwise the 1-based number of a later bus.
     pub out: u8,
@@ -198,6 +204,7 @@ impl Default for BusCfg {
     fn default() -> Self {
         BusCfg {
             level: 1.0,
+            pan: 0.0,
             mute: false,
             out: 0,
             slots: [SlotCfg::new(FxKind::None, true); 3],
@@ -209,10 +216,19 @@ impl Default for BusCfg {
 }
 
 impl BusCfg {
+    /// The vocal bus as a new project has it: tuning ready but switched off, levelling on,
+    /// and the throw effect waiting with its send down.
+    pub fn vocal() -> BusCfg {
+        BusCfg {
+            slots: [SlotCfg::new(FxKind::Tune, false), SlotCfg::new(FxKind::VocalComp, true), SlotCfg::new(FxKind::Throw, true)],
+            ..BusCfg::default()
+        }
+    }
+
     /// The bus index keying this one, if sidechaining is in effect on bus `own`.
     pub fn sidechain_source(&self, own: usize) -> Option<usize> {
         let src = (self.sc_src as usize).checked_sub(1)?;
-        (src < 4 && src != own && self.sc_amount != 0.0).then_some(src)
+        (src < crate::shared::MASTER && src != own && self.sc_amount != 0.0).then_some(src)
     }
 }
 
@@ -233,6 +249,23 @@ pub struct Pattern {
 impl Default for Pattern {
     fn default() -> Self {
         Pattern { len_ticks: TICKS_PER_BAR * 2, notes: Vec::new() }
+    }
+}
+
+/// The vocal bus's fixed front end and its hold on another bus.
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
+pub struct VocalFx {
+    /// Gate threshold in dB; at or below -80 the gate is off.
+    pub gate_db: f32,
+    /// De-esser strength, 0..1.
+    pub deess: f32,
+    /// Bus (1-4) whose midrange makes room while the vocal sounds; 0 = none.
+    pub duck_bus: u8,
+}
+
+impl Default for VocalFx {
+    fn default() -> Self {
+        VocalFx { gate_db: -80.0, deess: 0.0, duck_bus: 0 }
     }
 }
 
@@ -264,8 +297,11 @@ pub enum Cmd {
     Play(bool),
     SetBpm(f32),
     SetSwing(f32),
+    /// Pitch classes of the project scale, a bit each, C first.
+    SetScale(u16),
+    SetVocalFx(VocalFx),
     Metronome(bool),
-    /// 0 = master, 1..=4 = that bus post-FX, 5 = external input (pre-monitor).
+    /// 0 = master, 1..=4 = that bus post-FX, 5 = external input (pre-monitor), 6 = vocal bus.
     RingSource(u8),
     /// Silence one pad: its own voices and anything it triggered.
     StopPad { pad: u16 },
@@ -273,8 +309,12 @@ pub enum Cmd {
     SetInput { rx: Option<Consumer<f32>>, ratio: f32 },
     /// Where the external input is monitored: 0 = off, 1 = thru, 2..=5 = Bus 1-4.
     InputCfg { dest: u8, gain: f32 },
+    /// How the input's two channels are treated: 0 = auto (a source on one channel only is
+    /// centred), 1 = stereo as it comes, 2 = always summed to mono.
+    InputMode(u8),
     /// Note repeat; `ticks` is the repeat interval.
     Roll { on: bool, ticks: u32 },
+    /// Silence everything now: voices, held notes and built-in effect tails.
     Panic,
 }
 

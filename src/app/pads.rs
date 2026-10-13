@@ -21,6 +21,12 @@ pub enum PadAction {
 
 impl App {
     pub fn pad_action(&mut self, idx: usize, action: PadAction) {
+        // A vocal pad's sample is rebuilt from its takes, so an edit to it would not last.
+        let rewrites = !matches!(action, PadAction::SetKind(_) | PadAction::Chop | PadAction::MakeMidi);
+        if rewrites && self.is_vocal(idx) {
+            self.status = "A vocal pad plays its comp. Bake it to a pad (Vocal tab) to edit the audio.".into();
+            return;
+        }
         match action {
             PadAction::SetKind(kind) => self.set_kind(idx, kind),
             PadAction::Browse => self.browse_sample(idx),
@@ -214,6 +220,17 @@ impl App {
     }
 
     pub fn set_kind(&mut self, idx: usize, kind: PadKind) {
+        if kind == PadKind::Vocal {
+            self.make_vocal(idx);
+            return;
+        }
+        if self.is_vocal(idx) {
+            // Leaving vocal: the comp stays as the pad's sample, the takes go.
+            if self.vocal_armed() {
+                self.vocal_disarm();
+            }
+            self.pads[idx].vocal = None;
+        }
         let p = &mut self.pads[idx];
         if p.cfg.kind == kind {
             return;

@@ -10,10 +10,10 @@ mod types;
 pub use plugin_rt::PluginRt;
 pub use types::*;
 
-use crate::fx::{Fx, FxKind, Svf, svf_g};
+use crate::fx::{Fx, FxCtx, FxKind, Svf, svf_g};
 use crate::music::{PPQ, TICKS_PER_BAR, swing_tick};
 use crate::sample::{SampleData, hermite};
-use crate::shared::{MASTER, MAX_PADS, NUM_BUSES, Shared, f32_load, f32_store};
+use crate::shared::{MASTER, MAX_PADS, NUM_BUSES, Shared, VOCAL, bus_index, f32_load, f32_store};
 use crate::synth::SynthVoice;
 use lufs::Lufs;
 use plugin_rt::{PlugEv, PlugNote};
@@ -26,6 +26,9 @@ pub const MAX_BLOCK: usize = 512;
 const NUM_VOICES: usize = 64;
 const NUM_SYNTH_VOICES: usize = 24;
 const MAX_HELD: usize = 32;
+
+/// A sample region longer than this is cut by a new hit of the same note, not layered.
+const RETRIGGER_SECS: f32 = 1.0;
 
 #[derive(Default)]
 struct PadRt {
@@ -96,6 +99,10 @@ pub struct Engine {
     playing: bool,
     bpm: f32,
     swing: f32,
+    /// Pitch classes of the project scale, for effects that follow it.
+    scale: u16,
+    vocal_fx: VocalFx,
+    vox: VocalState,
     /// Ticks since the playing loop started.
     tick: f64,
     scene_len: u32,
@@ -142,6 +149,16 @@ pub struct Engine {
     in_dest: u8,
     in_gain: f32,
     in_peak: f32,
+    /// Counts down to emptying the effects after a panic; 0 when none is pending.
+    flush_in: i32,
+    in_mode: u8,
+    /// Slow level of each input channel, for telling a one-sided source from a stereo one.
+    in_env: [f32; 2],
+    in_one_sided: bool,
+    /// How far the two input channels are folded into each other, 0..1.
+    in_fold: f32,
+    in_ring_peak: f32,
+    vox_key: Vec<f32>,
     in_buf: [Vec<f32>; 2],
 }
 
@@ -173,6 +190,9 @@ impl Engine {
             playing: false,
             bpm: 90.0,
             swing: 0.5,
+            scale: 0xfff,
+            vocal_fx: VocalFx::default(),
+            vox: VocalState::default(),
             tick: 0.0,
             scene_len: 0,
             queued: None,
@@ -194,7 +214,7 @@ impl Engine {
             ring_peak: 0.0,
             lufs: Lufs::new(sr),
             bus_idle: [0; NUM_BUSES],
-            key_buf: (0..4).map(|_| vec![0.0; MAX_BLOCK]).collect(),
+            key_buf: (0..MASTER).map(|_| vec![0.0; MAX_BLOCK]).collect(),
             sc_env: [0.0; NUM_BUSES],
             pad_plugins: (0..MAX_PADS).map(|_| None).collect(),
             plugin_pads: Vec::with_capacity(MAX_PADS),
@@ -208,6 +228,13 @@ impl Engine {
             in_dest: 1,
             in_gain: 1.0,
             in_peak: 0.0,
+            flush_in: 0,
+            in_mode: 0,
+            in_env: [0.0; 2],
+            in_one_sided: false,
+            in_fold: 0.0,
+            in_ring_peak: 0.0,
+            vox_key: vec![0.0; MAX_BLOCK],
             in_buf: [vec![0.0; MAX_BLOCK], vec![0.0; MAX_BLOCK]],
         }
     }
@@ -232,15 +259,25 @@ impl Engine {
 
     /// The playing loop has reached its end (or the bar line a queued loop was waiting
     /// for). Brings in the queued loop if there is one; otherwise the same loop goes round.
-    pub(super) fn next_scene(&mut self) {
+    ///
+    /// `frame` is where in the input ring the new loop begins, for lining up vocal takes.
+    pub(super) fn next_scene(&mut self, frame: u64) {
         self.scene_pass += 1;
+        self.shared.loop_frame.store(frame, Ordering::Relaxed);
         // Start clean: a long sample or a held synth note from the loop that just ended
         // would otherwise carry on over the next one, or double up with its own restart.
         // Short hits are left to ring out.
         for k in 0..self.seq_pads.len() {
             let pad = self.seq_pads[k];
             let p = &self.pads[pad as usize];
-            let lingers = p.cfg.kind == PadKind::Midi || p.sample.as_ref().is_some_and(|s| s.len() as f32 > self.sr * 2.0);
+            // A vocal pad is left alone: its comp is as long as its loop, and a free take
+            // is meant to run on across loops.
+            let long = p.sample.as_ref().is_some_and(|s| s.len() as f32 > self.sr * 2.0);
+            let lingers = match p.cfg.kind {
+                PadKind::Midi => true,
+                PadKind::Audio => long,
+                PadKind::Vocal => false,
+            };
             if lingers {
                 self.silence_pad(pad);
             }
@@ -390,6 +427,8 @@ impl Engine {
                     self.buses[bus as usize] = cfg;
                 }
             }
+            Cmd::SetScale(mask) => self.scale = mask,
+            Cmd::SetVocalFx(fx) => self.vocal_fx = fx,
             Cmd::SceneLen(len) => {
                 self.scene_len = len;
                 if len > 0 {
@@ -406,6 +445,8 @@ impl Engine {
                     self.tick = 0.0;
                     self.scene_pass = 0;
                     self.song_tick = 0.0;
+                    self.shared.loop_frame.store(self.shared.input_ring.written(), Ordering::Relaxed);
+                    self.shared.play_starts.fetch_add(1, Ordering::Relaxed);
                 }
                 if !on {
                     // Stop also ends sequenced notes and free-running loops.
@@ -425,7 +466,7 @@ impl Engine {
             Cmd::SetBpm(b) => self.bpm = b.clamp(20.0, 300.0),
             Cmd::SetSwing(s) => self.swing = s.clamp(0.5, 0.75),
             Cmd::Metronome(on) => self.metronome = on,
-            Cmd::RingSource(s) => self.ring_src = s.min(5),
+            Cmd::RingSource(s) => self.ring_src = s.min(6),
             Cmd::StopPad { pad } => {
                 self.silence_pad(pad);
                 for h in self.held.iter_mut() {
@@ -446,9 +487,10 @@ impl Engine {
                 self.in_next = [0.0; 2];
             }
             Cmd::InputCfg { dest, gain } => {
-                self.in_dest = dest.min(5);
+                self.in_dest = dest.min(MASTER as u8 + 1);
                 self.in_gain = gain;
             }
+            Cmd::InputMode(mode) => self.in_mode = mode.min(2),
             Cmd::Roll { on, ticks } => {
                 self.roll_on = on;
                 self.roll_ticks = ticks.max(10);
@@ -462,6 +504,9 @@ impl Engine {
                 }
                 self.held = [None; MAX_HELD];
                 self.plugin_notes_off(None);
+                // The voices take a few milliseconds to fade; the effects are emptied once
+                // they have, or the fade itself would be left echoing in them.
+                self.flush_in = (self.sr * 0.006) as i32;
             }
         }
     }
@@ -472,7 +517,7 @@ impl Engine {
             return;
         }
         match cfg.kind {
-            PadKind::Audio => self.start_voice(ev.pad, ev, 1.0, false, live),
+            PadKind::Audio | PadKind::Vocal => self.start_voice(ev.pad, ev, 1.0, false, live),
             PadKind::Midi => match cfg.target {
                 MidiTarget::Synth => {
                     self.age += 1;
@@ -482,7 +527,7 @@ impl Engine {
                     slot.start(ev.pad, ev.key, note, ev.vel, ev.offset, ev.gate, age);
                 }
                 MidiTarget::Pad(p) => {
-                    if (p as usize) < MAX_PADS && self.pads[p as usize].cfg.kind == PadKind::Audio {
+                    if (p as usize) < MAX_PADS && self.pads[p as usize].cfg.kind != PadKind::Midi {
                         self.start_voice(p, ev, cfg.vol, true, live);
                     }
                 }
@@ -530,6 +575,17 @@ impl Engine {
                 }
             }
         }
+        // Hitting a long sample again restarts it instead of piling another copy on top;
+        // only the same note is cut, so chords played from one pad still stack. Short hits
+        // are left to overlap, which is what makes a fast roll sound natural.
+        let rate = 2f64.powf(ev.semis as f64 / 12.0);
+        if cfg.mode != PlayMode::Loop && (end - start) as f32 > self.sr * RETRIGGER_SECS {
+            for v in self.voices.iter_mut() {
+                if v.active && v.pad == pad && v.owner == ev.pad && v.rate == rate {
+                    v.killed = true;
+                }
+            }
+        }
         if cfg.choke > 0 {
             for v in self.voices.iter_mut() {
                 if v.active && self.pads[v.pad as usize].cfg.choke == cfg.choke {
@@ -546,7 +602,7 @@ impl Engine {
             owner: ev.pad,
             key: ev.key,
             pos: if cfg.reverse { end as f64 - 1.0 } else { start as f64 },
-            rate: 2f64.powf(ev.semis as f64 / 12.0),
+            rate,
             gain: ev.vel * gain,
             env: 0.0,
             gated: via_midi || cfg.mode == PlayMode::Gate,
@@ -593,9 +649,18 @@ impl Engine {
     }
 }
 
-#[inline]
-fn bus_index(bus: u8) -> usize {
-    if (1..=4).contains(&bus) { bus as usize - 1 } else { MASTER }
+/// Filter and envelope state for the vocal bus's gate, de-esser and midrange ducking.
+#[derive(Default)]
+pub(super) struct VocalState {
+    pub gate_env: f32,
+    pub gate_gain: f32,
+    pub gate_open: bool,
+    pub ess: [Svf; 2],
+    pub ess_hi: f32,
+    pub ess_all: f32,
+    /// How strongly the vocal is present, 0..1, for the bus that makes room for it.
+    pub presence: f32,
+    pub duck: [Svf; 4],
 }
 
 /// Returns a free slot, or steals the oldest one.
