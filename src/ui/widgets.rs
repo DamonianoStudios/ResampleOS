@@ -1,0 +1,161 @@
+//! Custom controls shared by the zones: knobs, meters, pills and the transport button.
+
+use super::theme;
+use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, vec2};
+
+/// Rotary control for 0..1 values: drag up/down (Shift for fine), double-click to reset.
+pub fn knob(ui: &mut Ui, value: &mut f32, label: &str, default: f32, color: Color32) -> Response {
+    let (rect, mut resp) = ui.allocate_exact_size(vec2(46.0, 56.0), Sense::click_and_drag());
+    if resp.dragged() {
+        let d = resp.drag_delta();
+        let fine = if ui.input(|i| i.modifiers.shift) { 0.25 } else { 1.0 };
+        *value = (*value + (d.x * 0.003 - d.y * 0.006) * fine).clamp(0.0, 1.0);
+        resp.mark_changed();
+    }
+    if resp.double_clicked() {
+        *value = default;
+        resp.mark_changed();
+    }
+    let hot = resp.hovered() || resp.dragged();
+    let p = ui.painter_at(rect);
+    let c = Pos2::new(rect.center().x, rect.top() + 21.0);
+    let r = 13.0;
+    let ang = |t: f32| (135.0 + 270.0 * t).to_radians();
+    let arc = |from: f32, to: f32, col: Color32, w: f32| {
+        let steps = 28;
+        let pts: Vec<Pos2> = (0..=steps)
+            .map(|i| {
+                let a = ang(from + (to - from) * i as f32 / steps as f32);
+                c + vec2(a.cos(), a.sin()) * (r + 4.5)
+            })
+            .collect();
+        p.line(pts, Stroke::new(w, col));
+    };
+    arc(0.0, 1.0, theme::WELL, 3.5);
+    if *value > 0.004 {
+        arc(0.0, *value, color, 3.5);
+    }
+    // Cap with a soft top-lit edge, and a pointer dot rather than a line.
+    p.circle_filled(c, r, if hot { theme::HOVER } else { theme::RAISED });
+    p.circle_stroke(c, r, Stroke::new(1.0, theme::mix(theme::RAISED, theme::TEXT, 0.14)));
+    let a = ang(*value);
+    p.circle_filled(c + vec2(a.cos(), a.sin()) * (r - 4.5), 2.2, if hot { theme::TEXT } else { color });
+    p.text(
+        Pos2::new(rect.center().x, rect.bottom()),
+        Align2::CENTER_BOTTOM,
+        label,
+        FontId::proportional(10.5),
+        if hot { theme::TEXT } else { theme::DIM },
+    );
+    resp.on_hover_text(format!("{label}: {:.0}%", *value * 100.0))
+}
+
+pub fn db(v: f32) -> f32 {
+    20.0 * v.max(1e-6).log10()
+}
+
+/// Vertical segmented peak meter, -60..+6 dB.
+pub fn meter(p: &egui::Painter, rect: Rect, peak: f32) {
+    p.rect_filled(rect, 2.0, theme::WELL);
+    let lit = ((db(peak) + 60.0) / 66.0).clamp(0.0, 1.0);
+    let seg = 3.0;
+    let count = (rect.height() / seg) as usize;
+    for i in 0..count {
+        let t = (i as f32 + 0.5) / count as f32;
+        if t > lit {
+            break;
+        }
+        // 0 dBFS sits at 60/66 of the way up.
+        let col = if t > 60.0 / 66.0 {
+            theme::RED
+        } else if t > 48.0 / 66.0 {
+            theme::AMBER
+        } else {
+            theme::GREEN
+        };
+        let y = rect.bottom() - (i as f32 + 1.0) * seg;
+        p.rect_filled(Rect::from_min_size(Pos2::new(rect.left(), y + 1.0), vec2(rect.width(), seg - 1.0)), 0.0, col);
+    }
+}
+
+/// Button that is lit in `color` while `on`.
+pub fn toggle(ui: &mut Ui, on: bool, text: &str, color: Color32) -> Response {
+    let label = egui::RichText::new(text).color(if on { theme::BG } else { theme::TEXT });
+    let mut b = egui::Button::new(label);
+    if on {
+        b = b.fill(color);
+    }
+    ui.add(b)
+}
+
+/// One segment of a tab row or filter: filled when selected, quiet otherwise.
+pub fn pill(ui: &mut Ui, selected: bool, text: &str) -> Response {
+    let font = if selected { theme::bold(13.0) } else { FontId::proportional(13.0) };
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, theme::TEXT);
+    let (rect, resp) = ui.allocate_exact_size(galley.size() + vec2(20.0, 9.0), Sense::click());
+    let p = ui.painter();
+    let (fill, fg) = if selected {
+        (theme::AMBER, theme::BG)
+    } else if resp.hovered() {
+        (theme::HOVER, theme::TEXT)
+    } else {
+        (Color32::TRANSPARENT, theme::DIM)
+    };
+    p.rect_filled(rect, rect.height() * 0.5, fill);
+    p.galley_with_override_text_color(rect.center() - galley.size() * 0.5, galley, fg);
+    resp
+}
+
+/// Square play/stop button with a drawn icon.
+pub fn transport_button(ui: &mut Ui, playing: bool) -> Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(46.0, 46.0), Sense::click());
+    let p = ui.painter();
+    let fill = if playing {
+        theme::GREEN
+    } else if resp.hovered() {
+        theme::HOVER
+    } else {
+        theme::RAISED
+    };
+    p.rect_filled(rect, 10.0, fill);
+    if !playing {
+        p.rect_stroke(rect, 10.0, Stroke::new(1.0, theme::FAINT), StrokeKind::Inside);
+    }
+    let c = rect.center();
+    if playing {
+        p.rect_filled(Rect::from_center_size(c, vec2(15.0, 15.0)), 2.0, theme::BG);
+    } else {
+        let tri = vec![c + vec2(-6.0, -9.0), c + vec2(9.0, 0.0), c + vec2(-6.0, 9.0)];
+        p.add(egui::Shape::convex_polygon(tri, theme::GREEN, Stroke::NONE));
+    }
+    resp.on_hover_text("Space")
+}
+
+/// Small rounded tag, used on pads and in lists.
+pub fn tag(p: &egui::Painter, pos: Pos2, text: &str, fg: Color32, bg: Color32) -> f32 {
+    let galley = p.layout_no_wrap(text.to_owned(), theme::bold(9.5), fg);
+    let r = Rect::from_min_size(pos, galley.size() + vec2(8.0, 3.0));
+    p.rect_filled(r, 3.0, bg);
+    p.galley(r.min + vec2(4.0, 1.5), galley, fg);
+    r.right()
+}
+
+/// Humanize amounts as two percentages. Returns true if either changed.
+pub fn humanize(ui: &mut Ui, time: &mut f32, vel: &mut f32) -> bool {
+    theme::caption(ui, "HUMANIZE");
+    let mut changed = false;
+    for (value, prefix, hint) in [
+        (time, "Time ", "How far notes may drift off the grid: up to about 1/16 of a beat either way at 100%"),
+        (vel, "Vel ", "How much each note's velocity varies"),
+    ] {
+        let mut pct = *value * 100.0;
+        let r = ui
+            .add(egui::DragValue::new(&mut pct).speed(0.5).range(0.0..=100.0).fixed_decimals(0).prefix(prefix).suffix("%"))
+            .on_hover_text(format!("{hint}. Applied at playback, differently each pass; the pattern is not changed."));
+        if r.changed() {
+            *value = pct / 100.0;
+            changed = true;
+        }
+    }
+    changed
+}

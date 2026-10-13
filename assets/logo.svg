@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="ResampleOS">
+  <defs><filter id="glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="34"/></filter>
+  <clipPath id="chassis"><rect width="1024" height="1024" rx="224"/></clipPath></defs>
+  <rect width="1024" height="1024" rx="224" fill="#14161c"/>
+  <rect x="11" y="11" width="1002" height="1002" rx="213" fill="none" stroke="#303542" stroke-width="10"/>
+  <g clip-path="url(#chassis)" filter="url(#glow)" opacity="0.6">
+  <rect x="542.0" y="186.0" width="296.0" height="296.0" rx="62" fill="#40d0e4"/>
+  <rect x="186.0" y="542.0" width="296.0" height="296.0" rx="62" fill="#ffb02e"/>
+  </g>
+  <rect x="186.0" y="186.0" width="296.0" height="296.0" rx="62" fill="#2c303c"/>
+  <rect x="542.0" y="186.0" width="296.0" height="296.0" rx="62" fill="#40d0e4"/>
+  <rect x="186.0" y="542.0" width="296.0" height="296.0" rx="62" fill="#ffb02e"/>
+  <rect x="542.0" y="542.0" width="296.0" height="296.0" rx="62" fill="#2c303c"/>
+  <path d="M 321.2 617.1 A 74 74 0 1 1 260.3 683.6" fill="none" stroke="#14161c" stroke-width="30"/>
+  <polygon points="268.0,626.5 313.9,575.8 328.4,658.5" fill="#14161c"/>
+</svg>

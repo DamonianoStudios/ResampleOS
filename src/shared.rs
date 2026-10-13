@@ -1,0 +1,154 @@
+//! State shared between the audio thread, the MIDI thread and the UI. Everything here is
+//! atomics so the audio thread never blocks and never allocates.
+
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+
+pub const PADS_PER_BANK: usize = 16;
+pub const MAX_BANKS: usize = 64;
+pub const MAX_PADS: usize = PADS_PER_BANK * MAX_BANKS;
+/// Buses 0..4 are Bus 1-4, index 4 is the master.
+pub const NUM_BUSES: usize = 5;
+pub const MASTER: usize = 4;
+pub const PEAK_HOP: usize = 512;
+
+const R: Ordering = Ordering::Relaxed;
+
+pub fn f32_load(a: &AtomicU32) -> f32 {
+    f32::from_bits(a.load(R))
+}
+
+pub fn f32_store(a: &AtomicU32, v: f32) {
+    a.store(v.to_bits(), R)
+}
+
+/// Continuous capture of the engine output: 32-bit float stereo, fixed size, written by the
+/// audio thread only. Readers may copy any region at any time; samples right at the write
+/// head can be a block stale, which is harmless for capture.
+pub struct SkipBack {
+    data: Box<[AtomicU32]>,
+    peaks: Box<[AtomicU32]>,
+    pub frames: usize,
+    written: AtomicU64,
+}
+
+impl SkipBack {
+    pub fn new(sample_rate: u32, seconds: usize) -> Self {
+        let frames = sample_rate as usize * seconds.max(10);
+        let npeaks = frames / PEAK_HOP;
+        SkipBack {
+            data: (0..frames * 2).map(|_| AtomicU32::new(0)).collect(),
+            peaks: (0..npeaks).map(|_| AtomicU32::new(0)).collect(),
+            frames,
+            written: AtomicU64::new(0),
+        }
+    }
+
+    /// Total frames ever written; the absolute timeline all capture positions refer to.
+    pub fn written(&self) -> u64 {
+        self.written.load(Ordering::Acquire)
+    }
+
+    /// Audio thread only.
+    pub fn write(&self, l: &[f32], r: &[f32], peak_acc: &mut f32) {
+        let mut w = self.written.load(R);
+        let mut at = (w % self.frames as u64) as usize;
+        for i in 0..l.len() {
+            self.data[at * 2].store(l[i].to_bits(), R);
+            self.data[at * 2 + 1].store(r[i].to_bits(), R);
+            *peak_acc = peak_acc.max(l[i].abs()).max(r[i].abs());
+            w += 1;
+            at += 1;
+            if at == self.frames {
+                at = 0;
+            }
+            // PEAK_HOP is a power of two, so this is a mask rather than a division.
+            if w.is_multiple_of(PEAK_HOP as u64) {
+                let p = ((w / PEAK_HOP as u64 - 1) % self.peaks.len() as u64) as usize;
+                f32_store(&self.peaks[p], *peak_acc);
+                *peak_acc = 0.0;
+            }
+        }
+        self.written.store(w, Ordering::Release);
+    }
+
+    /// Oldest absolute frame still held.
+    pub fn oldest(&self) -> u64 {
+        self.written().saturating_sub(self.frames as u64)
+    }
+
+    /// Copies `[start, end)` (absolute frames), clamped to what the ring still holds.
+    pub fn read(&self, start: u64, end: u64) -> (Vec<f32>, Vec<f32>) {
+        let end = end.min(self.written());
+        let start = start.max(self.oldest()).min(end);
+        let n = (end - start) as usize;
+        let mut l = Vec::with_capacity(n);
+        let mut r = Vec::with_capacity(n);
+        for f in start..end {
+            let idx = (f % self.frames as u64) as usize * 2;
+            l.push(f32::from_bits(self.data[idx].load(R)));
+            r.push(f32::from_bits(self.data[idx + 1].load(R)));
+        }
+        (l, r)
+    }
+
+    /// Peak of the `PEAK_HOP`-frame chunk with absolute chunk index `chunk`.
+    pub fn peak(&self, chunk: u64) -> f32 {
+        f32_load(&self.peaks[(chunk % self.peaks.len() as u64) as usize])
+    }
+}
+
+pub struct Shared {
+    pub sample_rate: u32,
+    pub ring: SkipBack,
+    /// Per-pad activity (envelope level of its loudest voice), 0 when idle.
+    pub pad_level: Box<[AtomicU32]>,
+    /// Per-pad playhead in frames, `u32::MAX` when idle.
+    pub pad_pos: Box<[AtomicU32]>,
+    /// Peak per bus, L then R.
+    pub bus_peak: [AtomicU32; NUM_BUSES * 2],
+    pub input_peak: AtomicU32,
+    pub lufs_momentary: AtomicU32,
+    pub lufs_short: AtomicU32,
+    pub playing: AtomicBool,
+    /// Transport position in ticks (f64 bits).
+    pub tick: AtomicU64,
+    /// Fraction of the audio callback budget used, 0..1.
+    pub load: AtomicU32,
+
+    // Written by the UI, read by the MIDI thread so pad hits bypass the UI frame clock.
+    pub ui_bank: AtomicU32,
+    pub ui_selected: AtomicU32,
+    pub ui_chromatic: AtomicBool,
+    pub ui_octave: AtomicU32,
+    pub ui_scale_mask: AtomicU32,
+    /// While set, pad hits pick the resample target instead of sounding.
+    pub ui_capture_pads: AtomicBool,
+}
+
+impl Shared {
+    pub fn new(sample_rate: u32, skipback_seconds: usize) -> Self {
+        Shared {
+            sample_rate,
+            ring: SkipBack::new(sample_rate, skipback_seconds),
+            pad_level: (0..MAX_PADS).map(|_| AtomicU32::new(0)).collect(),
+            pad_pos: (0..MAX_PADS).map(|_| AtomicU32::new(u32::MAX)).collect(),
+            bus_peak: std::array::from_fn(|_| AtomicU32::new(0)),
+            input_peak: AtomicU32::new(0),
+            lufs_momentary: AtomicU32::new((-70f32).to_bits()),
+            lufs_short: AtomicU32::new((-70f32).to_bits()),
+            playing: AtomicBool::new(false),
+            tick: AtomicU64::new(0),
+            load: AtomicU32::new(0),
+            ui_bank: AtomicU32::new(0),
+            ui_selected: AtomicU32::new(0),
+            ui_chromatic: AtomicBool::new(false),
+            ui_octave: AtomicU32::new(0),
+            ui_scale_mask: AtomicU32::new(0xfff),
+            ui_capture_pads: AtomicBool::new(false),
+        }
+    }
+
+    pub fn tick(&self) -> f64 {
+        f64::from_bits(self.tick.load(R))
+    }
+}
