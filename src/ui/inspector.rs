@@ -1,8 +1,8 @@
 //! Zone B: the contextual inspector for the selected pad.
 
-use super::{knob, pill, roll, steps, theme, toggle};
+use super::{pill, roll, steps, theme, toggle};
 use crate::app::{App, PadAction, Tab};
-use crate::engine::{LfoTarget, PadCfg, PadKind, PlayMode};
+use crate::engine::{PadCfg, PadKind, PlayMode};
 use crate::music::pad_label;
 use eframe::egui::{self, Align2, Color32, FontId, PointerButton, Pos2, Rect, Sense, Stroke, Ui, vec2};
 
@@ -91,7 +91,7 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     let own_editor = matches!(app.tab, Tab::Roll | Tab::Steps);
     match app.tab {
         Tab::Wave => action = wave_tab(app, ui, &mut cfg).or(action),
-        Tab::Mod => mod_tab(app, ui, &mut cfg),
+        Tab::Mod => super::modwarp::draw(app, ui, &mut cfg),
         Tab::Roll | Tab::Steps => {}
     }
     if cfg != before {
@@ -337,68 +337,4 @@ fn wave_tab(app: &mut App, ui: &mut Ui, cfg: &mut PadCfg) -> Option<PadAction> {
         theme::DIM,
     );
     action
-}
-
-fn mod_tab(app: &mut App, ui: &mut Ui, cfg: &mut PadCfg) {
-    let sel = app.selected;
-    ui.columns(3, |cols| {
-        let ui = &mut cols[0];
-        ui.label(egui::RichText::new("PITCH").small().color(theme::AMBER));
-        let mut coarse = cfg.pitch.round();
-        let mut fine = (cfg.pitch - coarse) * 100.0;
-        ui.horizontal(|ui| {
-            ui.label("Coarse");
-            ui.add(egui::DragValue::new(&mut coarse).speed(0.1).range(-36.0..=36.0).fixed_decimals(0).suffix(" st"));
-        });
-        ui.horizontal(|ui| {
-            ui.label("Fine");
-            ui.add(egui::DragValue::new(&mut fine).speed(0.5).range(-50.0..=50.0).fixed_decimals(0).suffix(" ct"));
-        });
-        cfg.pitch = coarse + fine / 100.0;
-        ui.add_space(6.0);
-        ui.label(egui::RichText::new("FILTER").small().color(theme::AMBER));
-        ui.horizontal(|ui| {
-            knob(ui, &mut cfg.cutoff, "Cutoff", 1.0, theme::AMBER);
-            knob(ui, &mut cfg.reso, "Reso", 0.0, theme::AMBER);
-        });
-
-        let ui = &mut cols[1];
-        ui.label(egui::RichText::new("LFO").small().color(theme::CYAN));
-        egui::ComboBox::from_id_salt("lfo_target")
-            .selected_text(format!("to {:?}", cfg.lfo_target))
-            .show_ui(ui, |ui| {
-                for t in [LfoTarget::Off, LfoTarget::Pitch, LfoTarget::Volume, LfoTarget::Pan, LfoTarget::Filter] {
-                    ui.selectable_value(&mut cfg.lfo_target, t, format!("{t:?}"));
-                }
-            });
-        ui.horizontal(|ui| {
-            ui.label("Rate");
-            ui.add(egui::DragValue::new(&mut cfg.lfo_rate).speed(0.02).range(0.05..=30.0).suffix(" Hz").fixed_decimals(2));
-        });
-        ui.horizontal(|ui| {
-            knob(ui, &mut cfg.lfo_depth, "Depth", 0.0, theme::CYAN);
-        });
-
-        let ui = &mut cols[2];
-        ui.label(egui::RichText::new("WARP (bakes a new take)").small().color(theme::RED));
-        ui.horizontal(|ui| {
-            ui.label("Shift");
-            ui.add(egui::DragValue::new(&mut app.warp_semis).speed(0.05).range(-24.0..=24.0).fixed_decimals(2).suffix(" st"));
-        });
-        ui.horizontal(|ui| {
-            ui.label("Length");
-            ui.add(egui::DragValue::new(&mut app.warp_stretch).speed(0.5).range(25.0..=400.0).fixed_decimals(0).suffix(" %"));
-        });
-        ui.checkbox(&mut app.preserve_transients, "Lock transients");
-        let has = app.pads[sel].sample().is_some();
-        if ui.add_enabled(has, egui::Button::new("Bake warp")).clicked() {
-            let note = format!("warped {:+.2} st, {:.0}% length", app.warp_semis, app.warp_stretch);
-            app.warp(sel, app.warp_stretch as f64 / 100.0, app.warp_semis, note);
-        }
-        ui.label(
-            egui::RichText::new("Pitch here keeps the length. Formants move with the pitch; independent formant control isn't implemented.")
-                .small()
-                .color(theme::DIM),
-        );
-    });
 }

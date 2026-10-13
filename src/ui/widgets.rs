@@ -5,7 +5,13 @@ use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Response, Sense, S
 
 /// Rotary control for 0..1 values: drag up/down (Shift for fine), double-click to reset.
 pub fn knob(ui: &mut Ui, value: &mut f32, label: &str, default: f32, color: Color32) -> Response {
-    let (rect, mut resp) = ui.allocate_exact_size(vec2(46.0, 56.0), Sense::click_and_drag());
+    knob_sized(ui, value, label, default, color, 13.0)
+}
+
+/// A knob with a cap of radius `r`, for rows that have to fit more than three controls.
+/// It keeps the standard knob's height so the two can share a row.
+pub fn knob_sized(ui: &mut Ui, value: &mut f32, label: &str, default: f32, color: Color32, r: f32) -> Response {
+    let (rect, mut resp) = ui.allocate_exact_size(vec2(r * 2.0 + 20.0, 56.0), Sense::click_and_drag());
     if resp.dragged() {
         let d = resp.drag_delta();
         let fine = if ui.input(|i| i.modifiers.shift) { 0.25 } else { 1.0 };
@@ -19,7 +25,6 @@ pub fn knob(ui: &mut Ui, value: &mut f32, label: &str, default: f32, color: Colo
     let hot = resp.hovered() || resp.dragged();
     let p = ui.painter_at(rect);
     let c = Pos2::new(rect.center().x, rect.top() + 21.0);
-    let r = 13.0;
     let ang = |t: f32| (135.0 + 270.0 * t).to_radians();
     let arc = |from: f32, to: f32, col: Color32, w: f32| {
         let steps = 28;
@@ -48,6 +53,38 @@ pub fn knob(ui: &mut Ui, value: &mut f32, label: &str, default: f32, color: Colo
         if hot { theme::TEXT } else { theme::DIM },
     );
     resp.on_hover_text(format!("{label}: {:.0}%", *value * 100.0))
+}
+
+/// Short vertical slider for 0..1 values, the same footprint height as a knob. Drag up and
+/// down (Shift for fine), double-click to reset. The caller supplies the hover text, since
+/// only it knows what the value means.
+pub fn fader(ui: &mut Ui, value: &mut f32, label: &str, default: f32, color: Color32) -> Response {
+    let (rect, mut resp) = ui.allocate_exact_size(vec2(16.0, 56.0), Sense::click_and_drag());
+    if resp.dragged() {
+        let fine = if ui.input(|i| i.modifiers.shift) { 0.25 } else { 1.0 };
+        *value = (*value - resp.drag_delta().y / 34.0 * fine).clamp(0.0, 1.0);
+        resp.mark_changed();
+    }
+    if resp.double_clicked() {
+        *value = default;
+        resp.mark_changed();
+    }
+    let hot = resp.hovered() || resp.dragged();
+    let p = ui.painter_at(rect);
+    let track = Rect::from_min_max(Pos2::new(rect.center().x - 2.0, rect.top() + 4.0), Pos2::new(rect.center().x + 2.0, rect.top() + 40.0));
+    p.rect_filled(track, 2.0, theme::WELL);
+    let y = track.bottom() - *value * track.height();
+    p.rect_filled(Rect::from_min_max(Pos2::new(track.left(), y), track.max), 2.0, color);
+    let cap = Rect::from_center_size(Pos2::new(rect.center().x, y), vec2(12.0, 6.0));
+    p.rect_filled(cap, 2.0, if hot { theme::TEXT } else { theme::mix(theme::RAISED, theme::TEXT, 0.55) });
+    p.text(
+        Pos2::new(rect.center().x, rect.bottom()),
+        Align2::CENTER_BOTTOM,
+        label,
+        FontId::proportional(10.5),
+        if hot { theme::TEXT } else { theme::DIM },
+    );
+    resp
 }
 
 pub fn db(v: f32) -> f32 {

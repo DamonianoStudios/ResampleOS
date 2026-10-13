@@ -14,6 +14,8 @@ pub const MAX_TAKES: usize = 16;
 #[derive(Clone)]
 pub struct PluginSlot {
     pub path: PathBuf,
+    /// Which plugin inside the file, for files that hold several.
+    pub class_id: Option<String>,
     pub name: String,
     pub handle: Arc<Mutex<Plugin>>,
 }
@@ -77,11 +79,14 @@ impl PadModel {
 
     /// True when the two hold the same user-visible content. Buffers and plugins are
     /// compared by identity, so this is cheap enough to run every frame.
-    pub fn same_as(&self, other: &PadModel) -> bool {
+    ///
+    /// `patterns` is false where the pattern is accounted for elsewhere: undo keeps patterns
+    /// with their loops, not with the pads.
+    pub fn same_as(&self, other: &PadModel, patterns: bool) -> bool {
         self.cfg == other.cfg
             && self.take_idx == other.take_idx
             && self.name == other.name
-            && self.pattern == other.pattern
+            && (!patterns || self.pattern == other.pattern)
             && self.transients == other.transients
             && self.takes.len() == other.takes.len()
             && self.takes.iter().zip(&other.takes).all(|(a, b)| Arc::ptr_eq(a, b))

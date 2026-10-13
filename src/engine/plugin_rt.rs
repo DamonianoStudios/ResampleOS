@@ -6,6 +6,9 @@ use vst3_host::Plugin;
 use vst3_host::audio::AudioBuffers;
 use vst3_host::midi::{MidiChannel, MidiEvent};
 
+/// How long the audio thread retries a contended plugin lock: tens of microseconds.
+const LOCK_SPINS: u32 = 4000;
+
 #[derive(Clone, Copy)]
 pub(super) struct PlugEv {
     pub on: bool,
@@ -15,8 +18,9 @@ pub(super) struct PlugEv {
 }
 
 /// The audio thread's handle on a hosted plugin. The plugin itself sits behind a mutex
-/// shared with the UI (editor, state, parameters); the audio thread only ever `try_lock`s,
-/// so a busy UI costs one silent block rather than a stall.
+/// shared with the UI (editor, state, parameters); the audio thread never parks on it. It
+/// retries for a bounded moment, which outlasts the UI's per-frame servicing, and gives the
+/// block up if the UI is doing something slower.
 pub struct PluginRt {
     handle: Arc<Mutex<Plugin>>,
     pub(super) buf: AudioBuffers,
@@ -53,7 +57,17 @@ impl PluginRt {
     /// Delivers queued notes and renders one block. False if the plugin was busy or failed;
     /// queued notes are kept for the next block in that case.
     pub(super) fn run(&mut self, n: usize) -> bool {
-        let Ok(mut p) = self.handle.try_lock() else { return false };
+        let mut tries = 0;
+        let mut p = loop {
+            match self.handle.try_lock() {
+                Ok(p) => break p,
+                Err(_) if tries < LOCK_SPINS => {
+                    tries += 1;
+                    std::hint::spin_loop();
+                }
+                Err(_) => return false,
+            }
+        };
         for ev in &self.pending[..self.n_pending] {
             let (channel, note) = (MidiChannel::Ch1, ev.note);
             let m = if ev.on {

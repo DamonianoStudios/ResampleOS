@@ -148,6 +148,45 @@ pub fn hz_to_midi(hz: f32) -> f32 {
     69.0 + 12.0 * (hz / 440.0).log2()
 }
 
+/// Note values a tempo-synced LFO can run at, longest first, with the ticks in one cycle.
+pub const LFO_VALUES: [(&str, u32); 8] = [
+    ("4 bars", TICKS_PER_BAR * 4),
+    ("2 bars", TICKS_PER_BAR * 2),
+    ("1 bar", TICKS_PER_BAR),
+    ("1/2", PPQ * 2),
+    ("1/4", PPQ),
+    ("1/8", PPQ / 2),
+    ("1/16", PPQ / 4),
+    ("1/32", PPQ / 8),
+];
+
+/// Straight, dotted and triplet: suffix and length relative to the plain note value.
+pub const LFO_FEELS: [(&str, &str, f64); 3] = [("Straight", "", 1.0), ("Dotted", " dotted", 1.5), ("Triplet", " triplet", 2.0 / 3.0)];
+
+/// An LFO's `sync` setting is 0 for a free rate in Hz, otherwise 1 + value * 3 + feel.
+pub fn lfo_sync(value: usize, feel: usize) -> u8 {
+    (1 + value.min(LFO_VALUES.len() - 1) * 3 + feel.min(2)) as u8
+}
+
+/// The note value and feel of a sync setting.
+pub fn lfo_sync_parts(sync: u8) -> Option<(usize, usize)> {
+    let i = (sync as usize).checked_sub(1)?;
+    (i / 3 < LFO_VALUES.len()).then_some((i / 3, i % 3))
+}
+
+/// Ticks in one cycle of a synced LFO; `None` when it runs free.
+pub fn lfo_sync_ticks(sync: u8) -> Option<f64> {
+    let (value, feel) = lfo_sync_parts(sync)?;
+    Some(LFO_VALUES[value].1 as f64 * LFO_FEELS[feel].2)
+}
+
+pub fn lfo_sync_name(sync: u8) -> String {
+    match lfo_sync_parts(sync) {
+        Some((value, feel)) => format!("{}{}", LFO_VALUES[value].0, LFO_FEELS[feel].1),
+        None => "free".into(),
+    }
+}
+
 /// MPC-style swing: warps straight tick time so every second 16th lands at `swing`
 /// (0.5 = straight, 0.75 = hardest) of its 8th-note pair. Piecewise linear, so
 /// microtimed notes between grid lines move proportionally.
@@ -194,6 +233,23 @@ mod tests {
         assert_eq!(bank_name(26), "AA");
         assert_eq!(bank_name(27), "AB");
         assert_eq!(pad_label(16), "B01");
+    }
+
+    #[test]
+    fn lfo_sync_settings_round_trip_and_scale() {
+        assert_eq!(lfo_sync_ticks(0), None);
+        for value in 0..LFO_VALUES.len() {
+            for feel in 0..3 {
+                assert_eq!(lfo_sync_parts(lfo_sync(value, feel)), Some((value, feel)));
+            }
+        }
+        // A quarter note, then its dotted and triplet forms.
+        assert_eq!(lfo_sync_ticks(lfo_sync(4, 0)), Some(PPQ as f64));
+        assert_eq!(lfo_sync_ticks(lfo_sync(4, 1)), Some(PPQ as f64 * 1.5));
+        assert!((lfo_sync_ticks(lfo_sync(4, 2)).unwrap() - PPQ as f64 * 2.0 / 3.0).abs() < 1e-9);
+        // The fastest setting is a 32nd-note triplet; anything past the table runs free.
+        assert_eq!(lfo_sync_name(lfo_sync(7, 2)), "1/32 triplet");
+        assert_eq!(lfo_sync_ticks(lfo_sync(7, 2) + 1), None);
     }
 
     #[test]

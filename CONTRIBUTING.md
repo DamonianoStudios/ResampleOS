@@ -21,7 +21,7 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first. Everything in `src/engi
 
 1. **Do not allocate.** No `Vec::push` past capacity, no `Box::new`, no `String`, no `format!`. Buffers are sized when the engine is built.
 2. **Do not free.** Dropping the last `Arc` to a sample frees it. Send it back on the garbage queue with `trash` instead.
-3. **Do not block.** No `Mutex::lock`, no channel `recv`, no file or console I/O. Hosted plugins are reached with `try_lock` only.
+3. **Do not block.** No `Mutex::lock`, no channel `recv`, no file or console I/O. Hosted plugins are reached with `try_lock` only, retried for a bounded moment.
 
 A change that needs new state from the UI should add a variant to `Cmd` rather than share memory.
 
@@ -40,6 +40,10 @@ Engine behaviour is tested without a device in `src/engine/tests.rs`. A new engi
 - Run `cargo clippy --release` and keep it free of new warnings. Indexed loops in DSP code are left as they are where they read better than iterator chains.
 - Comments say why, not what. Leave out comments that restate the code.
 - Match the file you are in.
+
+## The vendored plugin host
+
+`vendor/vst3-host` is a patched copy of the `vst3-host` crate, wired in through `[patch.crates-io]` in `Cargo.toml`. Each change is marked `ResampleOS patch` in the source and described in `vendor/README.md`. Keep that list current if you change the copy or move to a newer release.
 
 ## The logo and icon
 

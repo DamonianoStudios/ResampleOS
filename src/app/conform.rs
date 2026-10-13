@@ -114,7 +114,7 @@ impl App {
                 let to = (at + 256).min(n);
                 for (i, slot) in slots.iter().enumerate() {
                     if slot.on && slot.kind != FxKind::None {
-                        fx[i].process(slot.kind, slot.params, bpm, &mut l[at..to], &mut r[at..to]);
+                        fx[i].process(slot.kind, slot.params, slot.sliders, bpm, &mut l[at..to], &mut r[at..to]);
                     }
                 }
                 at = to;

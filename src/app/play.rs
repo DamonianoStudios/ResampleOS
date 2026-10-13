@@ -1,0 +1,133 @@
+//! The transport, playing pads and notes, and recording them into a pattern.
+
+use super::*;
+
+/// A note being held while Rec is on in the piano roll, waiting for its release.
+pub(super) struct PendingNote {
+    pub(super) key: u32,
+    pub(super) pad: usize,
+    pub(super) pitch: u8,
+    pub(super) vel: u8,
+    pub(super) start: f64,
+}
+
+impl App {
+    pub fn playing(&self) -> bool {
+        self.shared.playing.load(Ordering::Relaxed)
+    }
+
+    pub fn toggle_play(&mut self) {
+        let on = !self.playing();
+        if on
+            && let Resample::Recording { target, bar_aligned: false, .. } = self.resample {
+                // Starting the transport mid-take restarts the take on the downbeat.
+                self.resample =
+                    Resample::Recording { target, start: self.shared.ring.written(), bar_aligned: true };
+            }
+        if on {
+            self.scenes_on_play();
+        } else {
+            self.scenes_on_stop();
+        }
+        self.send(Cmd::Play(on));
+        if on {
+            self.scenes_after_play();
+        }
+    }
+
+    /// Semitone offset for the i-th key of a chromatic spread.
+    pub fn spread_semis(&self, i: i32) -> f32 {
+        let s = match self.conform_mode {
+            ConformMode::Strict => i,
+            ConformMode::Smart => self.key.degree_semis(i),
+        };
+        (s + self.octave * 12) as f32
+    }
+
+    /// A hit on pad slot `i` (0..16) of the visible bank, from keyboard or mouse.
+    pub fn slot_hit(&mut self, i: usize, key: u32) -> (u16, u32) {
+        if self.chromatic {
+            let semis = self.spread_semis(i as i32);
+            self.note_on(self.selected, semis, 0.9, key);
+            (self.selected as u16, key)
+        } else {
+            let pad = self.bank * 16 + i;
+            self.pad_hit(pad, key);
+            (pad as u16, key)
+        }
+    }
+
+    pub fn pad_hit(&mut self, pad: usize, key: u32) {
+        if pad >= self.pads.len() {
+            return;
+        }
+        if self.m_down {
+            self.pads[pad].cfg.mute ^= true;
+            self.push_pad(pad);
+            return;
+        }
+        if self.q_down {
+            self.stop_pad(pad);
+            return;
+        }
+        if self.resample != Resample::Armed {
+            self.select(pad);
+        }
+        let semis = if self.pads[pad].cfg.kind == PadKind::Midi { (self.octave * 12) as f32 } else { 0.0 };
+        self.note_on(pad, semis, 0.9, key);
+    }
+
+    pub fn note_on(&mut self, pad: usize, semis: f32, vel: f32, key: u32) {
+        if self.resample == Resample::Armed {
+            self.begin_recording(pad);
+            return;
+        }
+        self.send(Cmd::PadOn { pad: pad as u16, vel, semis, key });
+        self.record_on(pad, semis, vel, key);
+    }
+
+    pub fn note_off(&mut self, pad: u16, key: u32) {
+        self.send(Cmd::PadOff { pad, key });
+        self.record_off(key);
+    }
+
+    pub fn select(&mut self, pad: usize) {
+        if pad < self.pads.len() && pad != self.selected {
+            self.selected = pad;
+            self.wave_view = (0.0, 1.0);
+            self.roll.drag = None;
+        }
+    }
+
+    pub(super) fn record_on(&mut self, pad: usize, semis: f32, vel: f32, key: u32) {
+        if !self.roll.rec || !self.playing() {
+            return;
+        }
+        // Audio pads record as steps at their own pitch; MIDI pads record the note played.
+        let semis = if self.pads[pad].cfg.kind == PadKind::Midi { semis } else { 0.0 };
+        let pitch = (60.0 + semis).round().clamp(0.0, 127.0) as u8;
+        self.pending.push(PendingNote {
+            key,
+            pad,
+            pitch,
+            vel: (vel * 127.0) as u8,
+            start: self.shared.tick(),
+        });
+    }
+
+    pub(super) fn record_off(&mut self, key: u32) {
+        let Some(at) = self.pending.iter().position(|p| p.key == key) else { return };
+        let p = self.pending.swap_remove(at);
+        let snap = SNAPS[self.roll.snap].1 as f64;
+        let len_ticks = self.pads[p.pad].pattern.len_ticks.max(1) as f64;
+        let len = (self.shared.tick() - p.start).max(30.0);
+        let start = ((p.start / snap).round() * snap).rem_euclid(len_ticks);
+        self.pads[p.pad].pattern.notes.push(Note {
+            start: start as u32,
+            len: len as u32,
+            pitch: p.pitch,
+            vel: p.vel.max(1),
+        });
+        self.push_pattern(p.pad);
+    }
+}

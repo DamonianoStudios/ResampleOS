@@ -22,6 +22,9 @@ const SCAN_TIMEOUT: Duration = Duration::from_secs(25);
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PluginEntry {
     pub path: PathBuf,
+    /// Which plugin inside the file this is. One file can hold hundreds (Waves' WaveShell).
+    #[serde(default)]
+    pub class_id: Option<String>,
     pub name: String,
     pub vendor: String,
     pub category: String,
@@ -44,6 +47,7 @@ impl PluginEntry {
 
 #[derive(Serialize, Deserialize)]
 struct ScanReply {
+    class_id: String,
     name: String,
     vendor: String,
     category: String,
@@ -51,9 +55,15 @@ struct ScanReply {
 
 /// Entry point for the scanner child process. Prints one marked line and exits.
 pub fn scan_child(path: &str) -> ! {
-    let reply = match vst3_host::discovery::get_plugin_info(Path::new(path)) {
-        Ok(i) => serde_json::to_string(&ScanReply { name: i.name, vendor: i.vendor, category: i.category })
-            .unwrap_or_default(),
+    let reply = match vst3_host::discovery::list_audio_classes(Path::new(path)) {
+        Ok(classes) if classes.is_empty() => "ERR no audio plugin in this file".to_string(),
+        Ok(classes) => {
+            let replies: Vec<ScanReply> = classes
+                .into_iter()
+                .map(|c| ScanReply { class_id: c.class_id, name: c.name, vendor: c.vendor, category: c.category })
+                .collect();
+            serde_json::to_string(&replies).unwrap_or_default()
+        }
         Err(e) => format!("ERR {e}"),
     };
     println!("{SCAN_MARKER}{reply}");
@@ -79,10 +89,12 @@ fn cache_file() -> Option<PathBuf> {
     Some(crate::prefs::config_dir()?.join("vst3_cache.json"))
 }
 
-fn scan_one(exe: &Path, path: &Path, cancel: &AtomicBool) -> PluginEntry {
+/// Probes one file. The result is every plugin in it, or a single entry saying why not.
+fn scan_one(exe: &Path, path: &Path, cancel: &AtomicBool) -> Vec<PluginEntry> {
     let fallback = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     let mut entry = PluginEntry {
         path: path.to_path_buf(),
+        class_id: None,
         name: fallback,
         vendor: String::new(),
         category: String::new(),
@@ -102,7 +114,7 @@ fn scan_one(exe: &Path, path: &Path, cancel: &AtomicBool) -> PluginEntry {
         Ok(c) => c,
         Err(e) => {
             entry.error = Some(format!("could not start scanner: {e}"));
-            return entry.finish();
+            return vec![entry.finish()];
         }
     };
     // Read on another thread so a chatty plugin can't block on a full pipe.
@@ -131,23 +143,33 @@ fn scan_one(exe: &Path, path: &Path, cancel: &AtomicBool) -> PluginEntry {
     let line = text.lines().rev().find_map(|l| l.strip_prefix(SCAN_MARKER));
     match (line, status) {
         (Some(l), _) if l.starts_with("ERR ") => entry.error = Some(l[4..].to_string()),
-        (Some(l), _) => match serde_json::from_str::<ScanReply>(l) {
-            Ok(r) => {
-                entry.instrument = r.category.contains("Instrument");
-                entry.name = r.name;
-                entry.vendor = r.vendor;
-                entry.category = r.category;
+        (Some(l), _) => match serde_json::from_str::<Vec<ScanReply>>(l) {
+            Ok(replies) => {
+                return replies
+                    .into_iter()
+                    .map(|r| {
+                        PluginEntry {
+                            class_id: Some(r.class_id),
+                            instrument: r.category.contains("Instrument"),
+                            name: r.name,
+                            vendor: r.vendor,
+                            category: r.category,
+                            ..entry.clone()
+                        }
+                        .finish()
+                    })
+                    .collect();
             }
             Err(e) => entry.error = Some(format!("unreadable scan result: {e}")),
         },
         (None, None) => entry.error = Some("timed out while loading".into()),
         (None, Some(s)) => entry.error = Some(format!("crashed while loading ({s})")),
     }
-    entry.finish()
+    vec![entry.finish()]
 }
 
 enum ScanMsg {
-    Entry(PluginEntry),
+    Entries(Vec<PluginEntry>),
     Done,
 }
 
@@ -170,7 +192,9 @@ impl Catalog {
             .unwrap_or_default();
         entries = entries.into_iter().map(PluginEntry::finish).collect();
         Catalog {
-            scanned_once: !entries.is_empty(),
+            // A cache written before files were read plugin by plugin counts as no scan,
+            // so the browser refreshes it by itself.
+            scanned_once: !entries.is_empty() && entries.iter().all(|e| e.error.is_some() || e.class_id.is_some()),
             entries,
             scanning: false,
             total: 0,
@@ -205,13 +229,19 @@ impl Catalog {
         roots.extend(extra_dirs.iter().cloned());
         let paths = vst3_host::discovery::scan_directories(&roots).unwrap_or_default();
 
-        let known: HashMap<PathBuf, PluginEntry> = self.entries.drain(..).map(|e| (e.path.clone(), e)).collect();
+        let mut known: HashMap<PathBuf, Vec<PluginEntry>> = HashMap::new();
+        for e in self.entries.drain(..) {
+            known.entry(e.path.clone()).or_default().push(e);
+        }
         let mut todo = Vec::new();
         for path in paths {
-            match known.get(&path) {
-                Some(e) if e.stamp == stamp(&path) && !(retry_failed && e.error.is_some()) => {
-                    self.entries.push(e.clone())
-                }
+            // Entries cached before files were read plugin by plugin have no class id and
+            // describe only one plugin of the file, so those files are read again.
+            let fresh = |e: &PluginEntry| {
+                e.stamp == stamp(&path) && if e.error.is_some() { !retry_failed } else { e.class_id.is_some() }
+            };
+            match known.remove(&path) {
+                Some(found) if found.iter().all(fresh) => self.entries.extend(found),
                 _ => todo.push(path),
             }
         }
@@ -249,7 +279,8 @@ impl Catalog {
     }
 
     fn sort(&mut self) {
-        self.entries.sort_by(|a, b| a.key.cmp(&b.key));
+        // The file path keeps the many versions of one shell plugin in a stable order.
+        self.entries.sort_by(|a, b| a.key.cmp(&b.key).then_with(|| a.path.cmp(&b.path)));
     }
 
     /// Call once per frame: folds finished scans into the catalog.
@@ -259,8 +290,8 @@ impl Catalog {
         let mut finished = false;
         while let Ok(msg) = rx.try_recv() {
             match msg {
-                ScanMsg::Entry(e) => {
-                    self.entries.push(e);
+                ScanMsg::Entries(found) => {
+                    self.entries.extend(found);
                     got = true;
                 }
                 ScanMsg::Done => finished = true,
@@ -284,13 +315,13 @@ fn worker(exe: &Path, queue: &Mutex<Vec<PathBuf>>, tx: &Sender<ScanMsg>, done: &
             return;
         }
         let Some(path) = queue.lock().ok().and_then(|mut q| q.pop()) else { return };
-        let entry = scan_one(exe, &path, cancel);
+        let found = scan_one(exe, &path, cancel);
         done.fetch_add(1, Ordering::Relaxed);
         // A cancelled probe was killed by us, not by the plugin; don't record it as broken.
-        if cancel.load(Ordering::Relaxed) && entry.error.is_some() {
+        if cancel.load(Ordering::Relaxed) && found.iter().any(|e| e.error.is_some()) {
             return;
         }
-        if tx.send(ScanMsg::Entry(entry)).is_err() {
+        if tx.send(ScanMsg::Entries(found)).is_err() {
             return;
         }
     }

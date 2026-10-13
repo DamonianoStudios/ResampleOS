@@ -40,9 +40,23 @@ The sixteen pads of the current bank are on the right-hand side of the keyboard,
 | `Ctrl+Z` / `Ctrl+Y` | Undo and redo any project edit |
 | `Ctrl+Shift+Z` / `Ctrl+Shift+Y` | Step the selected pad back and forward through its takes |
 | `Ctrl+C` / `Ctrl+V` | Copy the selected pad, and paste onto the selected pad |
-| `Delete` | Clear the selected pad. In the piano roll, clear its pattern instead |
+| `Delete` | Clear the selected pad. In the piano roll, clear its pattern instead, or just the selected notes |
 | `C` | Chop the selected pad's transient slices onto the lowest empty bank |
 | `Ctrl+K` | Key and BPM harmonizer. `Enter` conforms |
+
+## Piano roll
+
+These apply while the piano roll is showing.
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+A` | Select every note |
+| `Shift+Up` / `Shift+Down` | Move the selected notes up or down an octave |
+| `Up` / `Down` | Move the selected notes one semitone, or one scale degree with scale lock on |
+| `Left` / `Right` | Nudge the selected notes by one grid step. With nothing selected these change bank |
+| `Ctrl+D` | Repeat the selected notes directly after themselves |
+| `Delete` | Delete the selected notes |
+| `Esc` | Clear the selection |
 
 ## Views
 
@@ -50,6 +64,7 @@ The sixteen pads of the current bank are on the right-hand side of the keyboard,
 | --- | --- |
 | `Tab` | Switch between the waveform and the piano roll |
 | `G` | Step sequencer for the current bank |
+| `P` | Perform mode: the pad keys and controller pads launch loops 1 to 16 |
 | `1` to `4`, `5` | Focus Bus 1 to 4, or the master |
 | `F1` | Shortcut help |
 | `F2` | VST3 browser, to load an instrument on the selected pad |
@@ -67,7 +82,15 @@ The sixteen pads of the current bank are on the right-hand side of the keyboard,
 | Waveform | Right-click | Add or remove a transient marker |
 | Waveform | Scroll, `Shift` + scroll | Zoom, pan |
 | Piano roll | Click, drag | Add a note, move it. Drag its right edge to resize. Hold `Alt` to ignore snap |
+| Piano roll | Click a note | Select it. `Shift` or `Ctrl` + click adds to or removes from the selection |
+| Piano roll | `Shift` + drag from an empty spot | Select every note the box touches |
+| Piano roll | Drag a selected note | Move or resize the whole selection |
+| Piano roll | `Ctrl` + drag a note | Duplicate: copies stay, the dragged notes move |
+| Choke matrix | Click or drag | Assign pads to a group. Start on a lit cell to clear |
 | Piano roll | Right-click a note | Delete it |
+| Loop number | Click | Work on that loop; while playing, line it up to take over at the end of the playing loop |
+| Loop number | `Shift` + click | Add the loop to the chain. Right-click to name or delete it |
+| Chain entry | Click | Remove it from the chain |
 | Step grid | Click or drag | Paint steps. Right-click a step to cycle normal, accent, soft |
 | Knob | Drag | Change. `Shift` for fine. Double-click to reset |
 | Skip-back bar | Drag | Select a region. Drag the selection onto a pad to capture it |
@@ -80,7 +103,7 @@ Every MIDI input present when the app starts is opened. Pad hits go straight fro
 
 | Notes | Action |
 | --- | --- |
-| 36 to 51 (C1 to D#2) | Pads 1 to 16 of the current bank. In chromatic mode, the selected pad at sixteen pitches |
+| 36 to 51 (C1 to D#2) | Pads 1 to 16 of the current bank. In chromatic mode, the selected pad at sixteen pitches. In perform mode, loops 1 to 16 |
 | Any other note | The selected pad played melodically, with note 60 as its original pitch |
 
 ### Control changes

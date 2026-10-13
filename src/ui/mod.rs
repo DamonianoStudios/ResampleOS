@@ -4,9 +4,11 @@ mod browser;
 mod buses;
 mod footer;
 mod inspector;
+mod modwarp;
 mod pads;
 mod prefs;
 mod roll;
+mod scenes;
 mod steps;
 pub mod theme;
 mod top;
@@ -14,7 +16,7 @@ mod widgets;
 mod windows;
 
 pub use theme::install as install_theme;
-pub(crate) use widgets::{db, humanize, knob, meter, pill, tag, toggle, transport_button};
+pub(crate) use widgets::{db, fader, humanize, knob, knob_sized, meter, pill, tag, toggle, transport_button};
 
 use crate::app::App;
 use eframe::egui::{self, Ui};

@@ -7,6 +7,7 @@
 //! forgotten. Sample buffers and plugins are shared by reference, so snapshots are small.
 
 use super::*;
+use crate::engine::Pattern;
 
 const MAX_STEPS: usize = 64;
 
@@ -20,6 +21,10 @@ pub struct Snapshot {
     key: Key,
     buses: [BusCfg; NUM_BUSES],
     fx_plugins: Vec<Option<PluginSlot>>,
+    /// Every loop with its patterns. The pads above carry none, so that moving between
+    /// loops, which only changes where the patterns are kept, is not an edit.
+    scenes: Vec<Scene>,
+    chain: Vec<usize>,
 }
 
 impl Snapshot {
@@ -47,8 +52,14 @@ impl History {
 
 impl App {
     fn snapshot(&self) -> Snapshot {
+        let mut pads = self.pads.clone();
+        for p in pads.iter_mut() {
+            p.pattern = Pattern::default();
+        }
         Snapshot {
-            pads: self.pads.clone(),
+            pads,
+            scenes: self.scenes_complete(),
+            chain: self.chain.clone(),
             banks: self.banks,
             bpm: self.bpm,
             swing: self.swing,
@@ -66,7 +77,18 @@ impl App {
             || self.buses != s.buses
             || self.pads.len() != s.pads.len()
             || self.fx_plugins.iter().map(|p| p.as_ref().map(PluginSlot::id)).ne(s.fx_ids())
-            || self.pads.iter().zip(&s.pads).any(|(a, b)| !a.same_as(b))
+            || self.chain != s.chain
+            || self.scenes.len() != s.scenes.len()
+            || self.pads.iter().zip(&s.pads).any(|(a, b)| !a.same_as(b, false))
+            || self.scenes.iter().zip(&s.scenes).enumerate().any(|(i, (a, b))| {
+                if a.bars != b.bars || a.name != b.name {
+                    true
+                } else if i == self.scene {
+                    !self.live_patterns().eq(b.patterns.iter().map(|(i, p)| (*i, p)))
+                } else {
+                    a.patterns != b.patterns
+                }
+            })
     }
 
     /// Forgets all history and treats the current state as the starting point.
@@ -120,7 +142,7 @@ impl App {
         let old_len = self.pads.len();
         let changed: Vec<usize> = (0..s.pads.len().max(old_len))
             .filter(|&i| match (self.pads.get(i), s.pads.get(i)) {
-                (Some(a), Some(b)) => !a.same_as(b),
+                (Some(a), Some(b)) => !a.same_as(b, false),
                 _ => true,
             })
             .collect();
@@ -129,7 +151,22 @@ impl App {
             (0..old.len()).filter(|&i| old[i] != new[i]).collect()
         };
         self.history.committed = Some(s.clone());
+        let old_patterns: Vec<Pattern> = self.pads.iter().map(|p| p.pattern.clone()).collect();
+        if self.queued_scene.take().is_some() {
+            self.send(Cmd::QueueScene(None));
+        }
+        self.scenes = s.scenes;
+        self.chain = s.chain;
+        self.chain_pos = 0;
+        // Which loop is on screen is a matter of view; stay on it if it still exists.
+        self.scene = self.scene.min(self.scenes.len() - 1);
+        self.shared.scene_index.store(self.scene as u32, Ordering::Relaxed);
         self.pads = s.pads;
+        for (i, p) in self.scenes[self.scene].patterns.clone() {
+            if let Some(pad) = self.pads.get_mut(i) {
+                pad.pattern = p;
+            }
+        }
         self.banks = s.banks;
         self.bpm = s.bpm;
         self.swing = s.swing;
@@ -137,6 +174,11 @@ impl App {
         self.buses = s.buses;
         self.fx_plugins = s.fx_plugins;
 
+        for i in 0..self.pads.len() {
+            if !changed.contains(&i) && old_patterns.get(i) != Some(&self.pads[i].pattern) {
+                self.push_pattern(i);
+            }
+        }
         for i in changed {
             if i < self.pads.len() {
                 self.resync_pad(i);
@@ -144,6 +186,7 @@ impl App {
                 self.reset_engine_pad(i);
             }
         }
+        self.push_scene_len();
         for i in fx_changed {
             let plugin = self.fx_plugins[i].as_ref().map(|slot| self.rt_for(slot));
             self.send(Cmd::SetFxPlugin { slot: i as u8, plugin });

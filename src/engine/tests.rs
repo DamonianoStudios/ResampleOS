@@ -156,7 +156,7 @@ fn external_input_is_monitored_and_capturable() {
 fn idle_bus_wakes_up_with_its_effects_intact() {
     use crate::fx::FxKind;
     let (mut e, mut tx, shared) = rig();
-    let crush = SlotCfg { kind: FxKind::Crush, params: [1.0, 1.0, 1.0], on: true };
+    let crush = SlotCfg { params: [1.0, 1.0, 1.0], ..SlotCfg::new(FxKind::Crush, true) };
     let mut bus = BusCfg::default();
     bus.slots[0] = crush;
     let _ = tx.push(Cmd::SetBus { bus: 0, cfg: bus });
@@ -250,4 +250,51 @@ fn sidechain_swell_opens_a_bus_only_with_its_key() {
     let during = run(&mut e, 2400);
     assert!(left_peak(&before, 2400, 4800) < 0.01, "bed should be held down without its key");
     assert!(left_peak(&during, 1200, 2400) > 0.2, "bed did not swell with the key");
+}
+
+#[test]
+fn queued_loop_takes_over_at_the_end_of_the_playing_one() {
+    let (mut e, mut tx, shared) = rig();
+    // Pad 0 hard left, pad 1 hard right, each a short hit on the one of a one-bar pattern.
+    let hit = || Some(Arc::new(Pattern { len_ticks: TICKS_PER_BAR, notes: vec![Note { start: 0, len: 60, pitch: 60, vel: 127 }] }));
+    for pad in 0..2 {
+        let cfg = PadCfg { pan: if pad == 0 { -1.0 } else { 1.0 }, ..PadCfg::default() };
+        let _ = tx.push(Cmd::SetPadCfg { pad, cfg });
+        let _ = tx.push(Cmd::SetSample { pad, sample: Some(tone(2400)) });
+    }
+    let _ = tx.push(Cmd::SetPattern { pad: 0, pattern: hit() });
+    let _ = tx.push(Cmd::SceneLen(TICKS_PER_BAR));
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    let _ = tx.push(Cmd::Play(true));
+    let swap = SceneSwap { index: 1, len_ticks: TICKS_PER_BAR, next_bar: false, patterns: vec![(0, None), (1, hit())] };
+    let _ = tx.push(Cmd::QueueScene(Some(Box::new(swap))));
+
+    // One bar at 120 BPM is two seconds.
+    let bar = SR as usize * 2;
+    let out = run(&mut e, bar * 2);
+    let side = |range: std::ops::Range<usize>, ch: usize| range.map(|i| out[i * 2 + ch].abs()).fold(0f32, f32::max);
+    assert!(side(0..4800, 0) > 0.2, "the first loop plays pad 0");
+    assert!(side(0..bar - 10, 1) < 1e-4, "pad 1 stays out until the switch");
+    assert!(side(bar..bar + 4800, 1) > 0.2, "the queued loop comes in on the bar");
+    assert!(side(bar..bar * 2, 0) < 1e-4, "and the first loop's pad is gone");
+    assert_eq!(shared.scene_index.load(Ordering::Relaxed), 1);
+    assert_eq!(shared.scene_starts.load(Ordering::Relaxed), 1, "one loop change in two bars, the second not yet over");
+}
+
+#[test]
+fn lfo_shapes_stay_in_range_and_start_together() {
+    for shape in LfoShape::ALL {
+        for i in 0..200 {
+            let v = shape.at(i as f64 / 50.0 - 1.0);
+            assert!((-1.0..=1.0).contains(&v), "{shape:?} gave {v}");
+        }
+        // Every shape is at or above zero through the first quarter of its cycle, so
+        // changing shape does not flip the direction of a modulation.
+        assert!(shape.at(0.1) > 0.0 && shape.at(0.6) < 0.0, "{shape:?}");
+    }
+    // A synced LFO counts cycles in ticks, a free one in seconds.
+    let synced = PadCfg { lfo_sync: crate::music::lfo_sync(4, 0), ..PadCfg::default() };
+    assert_eq!(lfo_phase(&synced, PPQ as f64 * 3.0, 99.0), 3.0);
+    let free = PadCfg { lfo_rate: 2.0, ..PadCfg::default() };
+    assert_eq!(lfo_phase(&free, 12345.0, 1.5), 3.0);
 }

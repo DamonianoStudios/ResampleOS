@@ -1,6 +1,6 @@
 //! Project folders: `project.json` plus one WAV per pad holding its active take.
 
-use crate::app::{App, ConformMode};
+use crate::app::{App, ConformMode, MAX_CHAIN, MAX_SCENES, Scene};
 use crate::engine::{BusCfg, Cmd, PadCfg, Pattern};
 use crate::model::PadModel;
 use crate::music::{Key, pad_label};
@@ -15,6 +15,8 @@ use std::sync::Arc;
 #[derive(Serialize, Deserialize, Clone)]
 struct PluginFile {
     path: PathBuf,
+    #[serde(default)]
+    class_id: Option<String>,
     name: String,
     /// File under `plugins/` holding the plugin's own state blob.
     state: Option<String>,
@@ -35,7 +37,7 @@ fn save_plugin(dir: &Path, label: &str, slot: &PluginSlot) -> PluginFile {
         std::fs::write(folder.join(&file), bytes).ok()?;
         Some(file)
     });
-    PluginFile { path: slot.path.clone(), name: slot.name.clone(), state }
+    PluginFile { path: slot.path.clone(), class_id: slot.class_id.clone(), name: slot.name.clone(), state }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -64,6 +66,16 @@ struct ProjectFile {
     pads: Vec<PadFile>,
     #[serde(default)]
     fx_plugins: Vec<FxPluginFile>,
+    /// Loops. The `pattern` stored with each pad above is the one for loop `scene`.
+    /// Projects from before loops existed have neither field and open as a single loop.
+    #[serde(default)]
+    scenes: Vec<Scene>,
+    #[serde(default)]
+    scene: usize,
+    #[serde(default)]
+    chain: Vec<usize>,
+    #[serde(default)]
+    chain_on: bool,
 }
 
 pub fn save(app: &App, dir: &Path) -> Result<usize, String> {
@@ -103,6 +115,10 @@ pub fn save(app: &App, dir: &Path) -> Result<usize, String> {
         conform_mode: app.conform_mode,
         auto_conform: app.auto_conform,
         preserve_transients: app.preserve_transients,
+        scenes: app.scenes_complete(),
+        scene: app.scene,
+        chain: app.chain.clone(),
+        chain_on: app.chain_on,
         pads,
         fx_plugins: app
             .fx_plugins
@@ -161,6 +177,22 @@ pub fn load(app: &mut App, dir: &Path) -> Result<usize, String> {
     app.preserve_transients = file.preserve_transients;
     app.bank = 0;
     app.selected = 0;
+    app.send(Cmd::QueueScene(None));
+    app.queued_scene = None;
+    app.chain_pos = 0;
+    app.scenes = file.scenes.iter().take(MAX_SCENES).cloned().collect();
+    if app.scenes.is_empty() {
+        // One loop, long enough for the longest pattern in the file.
+        let ticks = file.pads.iter().filter(|p| !p.pattern.notes.is_empty()).map(|p| p.pattern.len_ticks).max();
+        app.scenes.push(Scene::new(ticks.map_or(2, |t| t.div_ceil(crate::music::TICKS_PER_BAR))));
+    }
+    for scene in app.scenes.iter_mut() {
+        scene.bars = scene.bars.clamp(1, 16);
+    }
+    app.scene = file.scene.min(app.scenes.len() - 1);
+    app.chain = file.chain.iter().copied().filter(|s| *s < app.scenes.len()).take(MAX_CHAIN).collect();
+    app.chain_on = file.chain_on && !app.chain.is_empty();
+    app.shared.scene_index.store(app.scene as u32, std::sync::atomic::Ordering::Relaxed);
     // Unload the outgoing project's effect plugins before its bus settings are replaced.
     for b in 0..NUM_BUSES {
         for s in 0..3 {
@@ -169,13 +201,14 @@ pub fn load(app: &mut App, dir: &Path) -> Result<usize, String> {
     }
     app.buses = file.buses;
     app.push_all();
+    app.push_scene_len();
 
     // Plugins last: instantiating them is the slow, fallible part.
     let read_state = |pf: &PluginFile| pf.state.as_ref().and_then(|f| std::fs::read(dir.join("plugins").join(f)).ok());
     let mut missing = Vec::new();
     for pf in &file.pads {
         if let Some(pl) = &pf.plugin {
-            if pf.index < app.pads.len() && !app.load_plugin(&pl.path, PluginTarget::Pad(pf.index), read_state(pl).as_deref()) {
+            if pf.index < app.pads.len() && !app.load_plugin(&pl.path, pl.class_id.as_deref(), PluginTarget::Pad(pf.index), read_state(pl).as_deref()) {
                 missing.push(pl.name.clone());
             } else if pf.index < app.pads.len() {
                 // load_plugin renames the pad after the plugin; keep the saved name.
@@ -185,7 +218,7 @@ pub fn load(app: &mut App, dir: &Path) -> Result<usize, String> {
     }
     for fx in &file.fx_plugins {
         let saved = file.buses.get(fx.bus).and_then(|b| b.slots.get(fx.slot)).copied();
-        if !app.load_plugin(&fx.plugin.path, PluginTarget::Fx(fx.bus, fx.slot), read_state(&fx.plugin).as_deref()) {
+        if !app.load_plugin(&fx.plugin.path, fx.plugin.class_id.as_deref(), PluginTarget::Fx(fx.bus, fx.slot), read_state(&fx.plugin).as_deref()) {
             missing.push(fx.plugin.name.clone());
         } else if let Some(saved) = saved {
             app.buses[fx.bus].slots[fx.slot] = saved;

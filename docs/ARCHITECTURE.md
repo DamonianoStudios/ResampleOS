@@ -58,6 +58,14 @@ Things the UI needs to see continuously (meter levels, pad activity, playheads, 
 
 Blocks are at most 512 frames. A larger device buffer is rendered as several blocks.
 
+### Loops
+
+A project has up to sixteen loops: sets of patterns over the same pads. The engine holds only the patterns of the loop that is playing, and its transport position counts from the start of that loop and wraps at its length.
+
+A change of loop has to land exactly on the beat, so the UI does not make it. It sends the incoming loop's patterns ahead of time in one `SceneSwap` (`Cmd::QueueScene`). When the playing loop ends, or at the next bar line if the swap asks for that, the engine exchanges the patterns in place, in the middle of a block if need be, and sends the outgoing ones back on the garbage queue. It counts every loop start in `Shared`, and the UI follows: it moves its own model to the loop the engine reports and, if a chain is running, queues the entry after that. The UI has a whole loop in which to do so.
+
+On the UI side the pads always carry the patterns of the loop on screen; the others are kept in `App::scenes` (`src/app/scenes.rs`). Undo snapshots store all patterns with their loops and none on the pads, so moving between loops is not seen as an edit.
+
 ### Skip-back
 
 The skip-back buffer (`SkipBack` in `src/shared.rs`) is a fixed ring of 32-bit float stereo frames stored as atomics, with a parallel ring of peak values for drawing. The engine writes it; the UI can read any region at any time without a lock. Positions are absolute frame counts, so "the last 16 bars" and "from Mark In to Mark Out" are simple arithmetic.
@@ -70,11 +78,15 @@ Resample is built on the same ring. Arming records a start position; baking copi
 
 | File | Area |
 | --- | --- |
-| `mod.rs` | State, startup, pushing model state to the engine, playing notes, per-frame housekeeping |
+| `mod.rs` | The `App` struct, startup, pushing model state to the engine, per-frame housekeeping |
+| `state.rs` | The small types describing what the app is showing: tabs, modes, editor state |
+| `play.rs` | The transport, playing pads and notes, recording them into a pattern |
 | `pads.rs` | Samples, the take stack, banks, chopping, and `PadAction` |
 | `capture.rs` | External input, skip-back, resample |
 | `conform.rs` | Harmonizer, warping, baking bus effects |
 | `plugins.rs` | Plugin instances and editor windows |
+| `scenes.rs` | Loops, the chain, launching |
+| `roll.rs` | Piano roll selection edits |
 | `history.rs` | Undo and redo |
 | `input.rs` | Keyboard shortcuts and MIDI controller messages |
 
@@ -105,11 +117,13 @@ The onset envelope is the expensive part and does not depend on sensitivity, so 
 
 ## Plugin hosting
 
-Plugin loading, processing and editor windows use the [`vst3-host`](https://github.com/HelgeSverre/rust-vst3-host) crate.
+Plugin loading, processing and editor windows use the [`vst3-host`](https://github.com/HelgeSverre/rust-vst3-host) crate. The build uses the copy in `vendor/vst3-host`, which carries a few small changes that plugin editors and the scanner depend on; [`vendor/README.md`](../vendor/README.md) lists them.
 
-**Scanning** (`src/plugins.rs`) never loads a plugin inside the app. The executable has a second mode, `--scan-vst3 <path>`, that examines one plugin and prints one line. The app runs several of these at a time, each with a 25 second limit, and caches results against the file's timestamp and size.
+**Scanning** (`src/plugins.rs`) never loads a plugin inside the app. The executable has a second mode, `--scan-vst3 <path>`, that lists every plugin in one file and prints one line. It reads the file's class list without creating any plugin, so a shell holding hundreds of plugins costs about as much as a file holding one. Catalog entries, pad and bus slots and saved projects identify a plugin by file and class id. The app runs several of these at a time, each with a 25 second limit, and caches results against the file's timestamp and size.
 
-**Running.** A loaded plugin sits behind `Arc<Mutex<Plugin>>`, shared between the UI (editor, state, tempo) and the engine. The engine only ever uses `try_lock`: if the UI holds the lock, that plugin is silent for one block rather than stalling the audio thread. Notes for a busy plugin are kept for the next block. Output is checked for NaN and infinity before it is mixed.
+**Running.** A loaded plugin sits behind `Arc<Mutex<Plugin>>`, shared between the UI (editor, state, tempo) and the engine. The engine never parks on the lock. It retries for a few tens of microseconds, which outlasts the UI's per-frame servicing, and only then gives the block up: an instrument is silent for that block and an effect passes its input through. Notes for a busy plugin are kept for the next block. Output is checked for NaN and infinity before it is mixed.
+
+**Feeding editors.** A plugin's processor and its editor are separate objects, and the host carries data between them. While an editor is open, the UI thread drains what the processor reported each frame (`EditorWin::feed` in `src/app/plugins.rs`), which hands output parameter points such as gain-reduction readouts to the editor. Plugins that instead have the editor poll the processor through connection-point messages, often from a thread of their own, rely on the vendored crate forwarding those messages.
 
 Hosted plugins run inside the app's process. A plugin that crashes while playing takes the app with it.
 

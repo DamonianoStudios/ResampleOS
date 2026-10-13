@@ -75,6 +75,8 @@ impl App {
                     Key::Y => self.redo(),
                     Key::S => crate::project::save_dialog(self),
                     Key::O => crate::project::open_dialog(self),
+                    Key::A if self.tab == Tab::Roll => self.roll_select_all(),
+                    Key::D if self.roll_has_selection() => self.roll_duplicate(),
                     Key::C => self.clipboard = Some(self.selected),
                     Key::V => {
                         if let Some(from) = self.clipboard {
@@ -85,8 +87,24 @@ impl App {
                 }
                 continue;
             }
+            if self.roll_has_selection() {
+                let by = if shift { 12 } else { 1 };
+                match key {
+                    Key::ArrowUp => self.roll_transpose(by),
+                    Key::ArrowDown => self.roll_transpose(-by),
+                    Key::ArrowLeft => self.roll_nudge(-1),
+                    Key::ArrowRight => self.roll_nudge(1),
+                    Key::Delete => self.roll_delete_selected(),
+                    _ => {}
+                }
+                if matches!(key, Key::ArrowUp | Key::ArrowDown | Key::ArrowLeft | Key::ArrowRight | Key::Delete) {
+                    continue;
+                }
+            }
             if let Some(i) = PAD_KEYS.iter().position(|&k| k == key) {
-                if shift && !self.chromatic {
+                if self.perform {
+                    self.launch_scene(i);
+                } else if shift && !self.chromatic {
                     self.select(self.bank * 16 + i);
                 } else {
                     let (pad, id) = self.slot_hit(i, 0x1000 + i as u32);
@@ -105,6 +123,7 @@ impl App {
                 Key::C => self.chop(self.selected),
                 Key::X => self.chromatic ^= true,
                 Key::T => self.toggle_roll(),
+                Key::P => self.perform ^= true,
                 Key::Num1 => self.focus_bus = 0,
                 Key::Num2 => self.focus_bus = 1,
                 Key::Num3 => self.focus_bus = 2,
@@ -118,6 +137,7 @@ impl App {
                 Key::Backspace => self.stop_pad(self.selected),
                 Key::G => self.tab = if self.tab == Tab::Steps { Tab::Wave } else { Tab::Steps },
                 Key::Escape => {
+                    self.roll.sel.clear();
                     self.skip.resume();
                     self.harm.open = false;
                     self.show_prefs = false;

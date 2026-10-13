@@ -17,7 +17,8 @@ ResampleOS is a pad-based DAW built around committing to audio. Linear DAWs make
 - **Key and tempo conform.** Samples are analysed on load for tempo, key and transients. One action stretches and re-pitches a sample to the project, keeping transients intact.
 - **Transient chop.** One key spreads a sample's slices across the next empty bank.
 - **Piano roll and step sequencer.** Scale-locked piano roll with a velocity lane and free microtiming; a step grid per bank for drum patterns; swing and humanize on top.
-- **Performance buses.** Four buses and a master, three effect slots each: vinyl, cassette, DJ isolator and filter, bit-crush, compressor, tape delay, reverb. Buses can feed later buses and can be sidechained from one another.
+- **Loops, chain and perform mode.** Up to sixteen loops of 1 to 16 bars over the same pads, switched on the beat, chained into an arrangement, or launched live from the pads.
+- **Performance buses.** Four buses and a master, three effect slots each: vinyl, cassette, 3-band EQ, DJ isolator and filter, bit-crush, compressor, tape delay, reverb. Buses can feed later buses and can be sidechained from one another.
 - **VST3 hosting.** Instruments on pads and effects on buses, with a scanner that copes with libraries of a thousand plugins or more.
 - **External input**, **MIDI controllers**, **project-wide undo and redo**.
 
@@ -35,6 +36,12 @@ The first build takes a few minutes. Audio files given on the command line load 
 
 ```bash
 cargo run --release -- loop.wav kick.wav snare.wav
+```
+
+A project folder opens that project instead:
+
+```bash
+cargo run --release -- path/to/project
 ```
 
 To run the tests:
@@ -67,7 +74,7 @@ Press **F1** in the app for the shortcut list.
 
 ## Known limitations
 
-- VST3 only: no VST2, CLAP or AU. A `.vst3` file containing several plugins is listed as its first one.
+- VST3 only: no VST2, CLAP or AU.
 - Some VST3 effects load and show their editor but pass no audio. In testing this affected three of fourteen vendors. A silent effect mutes its bus.
 - Hosted plugins are not crash-isolated once loaded; only scanning is.
 - Changing the audio device, sample rate, buffer size or skip-back length takes effect after a restart.

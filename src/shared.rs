@@ -110,8 +110,16 @@ pub struct Shared {
     pub lufs_momentary: AtomicU32,
     pub lufs_short: AtomicU32,
     pub playing: AtomicBool,
-    /// Transport position in ticks (f64 bits).
+    /// Transport position in ticks from the start of the playing loop (f64 bits).
     pub tick: AtomicU64,
+    /// The clocks LFOs run from, for drawing them: ticks at the project tempo (from Play
+    /// while the transport runs) and seconds since the engine started. Both f64 bits.
+    pub lfo_ticks: AtomicU64,
+    pub lfo_secs: AtomicU64,
+    /// Counts every time a loop starts over or another takes its place.
+    pub scene_starts: AtomicU32,
+    /// The loop the engine is playing.
+    pub scene_index: AtomicU32,
     /// Fraction of the audio callback budget used, 0..1.
     pub load: AtomicU32,
 
@@ -123,6 +131,8 @@ pub struct Shared {
     pub ui_scale_mask: AtomicU32,
     /// While set, pad hits pick the resample target instead of sounding.
     pub ui_capture_pads: AtomicBool,
+    /// Perform mode: pad notes launch loops, so the MIDI thread leaves them to the UI.
+    pub ui_perform: AtomicBool,
 }
 
 impl Shared {
@@ -138,6 +148,10 @@ impl Shared {
             lufs_short: AtomicU32::new((-70f32).to_bits()),
             playing: AtomicBool::new(false),
             tick: AtomicU64::new(0),
+            lfo_ticks: AtomicU64::new(0),
+            lfo_secs: AtomicU64::new(0),
+            scene_starts: AtomicU32::new(0),
+            scene_index: AtomicU32::new(0),
             load: AtomicU32::new(0),
             ui_bank: AtomicU32::new(0),
             ui_selected: AtomicU32::new(0),
@@ -145,6 +159,7 @@ impl Shared {
             ui_octave: AtomicU32::new(0),
             ui_scale_mask: AtomicU32::new(0xfff),
             ui_capture_pads: AtomicBool::new(false),
+            ui_perform: AtomicBool::new(false),
         }
     }
 

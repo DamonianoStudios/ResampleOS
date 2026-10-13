@@ -144,11 +144,17 @@ fn choke_matrix(app: &mut App, ctx: &egui::Context) {
         .resizable(false)
         .show(ctx, |ui| {
             ui.label(
-                egui::RichText::new("Pads in the same group cut each other off. Click a cell to assign; click again to clear.")
+                egui::RichText::new("Pads in the same group cut each other off. Click or drag across cells to assign; start on a lit cell to clear.")
                     .small()
                     .color(theme::DIM),
             );
             let cell = 15.0;
+            let (pressed, down, pointer) =
+                ui.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_down(), i.pointer.interact_pos()));
+            if !down {
+                app.choke_paint = None;
+            }
+            ui.spacing_mut().item_spacing = vec2(6.0, 2.0);
             ui.horizontal(|ui| {
                 ui.add_space(86.0);
                 for g in 1..=32 {
@@ -158,23 +164,31 @@ fn choke_matrix(app: &mut App, ctx: &egui::Context) {
                     }
                 }
             });
-            ui.spacing_mut().item_spacing = vec2(6.0, 2.0);
             for i in (0..16).rev() {
                 let idx = app.bank * 16 + i;
                 ui.horizontal(|ui| {
                     let name: String = app.pads[idx].name.chars().take(8).collect();
                     ui.add_sized([80.0, cell], egui::Label::new(egui::RichText::new(format!("{} {name}", pad_label(idx))).small()));
                     for g in 1..=32u8 {
-                        let (r, resp) = ui.allocate_exact_size(vec2(cell, cell), Sense::click());
-                        let on = app.pads[idx].cfg.choke == g;
+                        // Sensing drags keeps a paint stroke from moving the window instead.
+                        let (r, resp) = ui.allocate_exact_size(vec2(cell, cell), Sense::click_and_drag());
+                        let mut on = app.pads[idx].cfg.choke == g;
+                        // Cover the gaps between cells, or a stroke would flicker across them.
+                        let under = pointer.is_some_and(|pos| r.expand2(vec2(3.0, 9.0)).contains(pos));
+                        if pressed && resp.contains_pointer() {
+                            app.choke_paint = Some(!on);
+                        }
+                        if let (true, Some(paint)) = (under, app.choke_paint)
+                            && paint != on
+                        {
+                            app.pads[idx].cfg.choke = if paint { g } else { 0 };
+                            app.push_pad(idx);
+                            on = paint;
+                        }
                         let p = ui.painter();
                         p.rect_filled(r.shrink(1.0), 2.0, if on { theme::PURPLE } else { theme::RAISED });
-                        if resp.hovered() {
+                        if resp.hovered() || under && app.choke_paint.is_some() {
                             p.rect_stroke(r.shrink(1.0), 2.0, Stroke::new(1.0, theme::TEXT), StrokeKind::Inside);
-                        }
-                        if resp.clicked() {
-                            app.pads[idx].cfg.choke = if on { 0 } else { g };
-                            app.push_pad(idx);
                         }
                     }
                 });
@@ -199,6 +213,8 @@ fn help(app: &mut App, ctx: &egui::Context) {
             ("Q + pad", "Stop that pad's playback"),
             ("Backspace", "Stop the selected pad's playback"),
             ("G", "Step sequencer for the current bank"),
+            ("P", "Perform mode: pad keys and controller pads launch loops"),
+            ("Shift + click a loop", "Add it to the chain"),
             ("Shift + pad", "Select without triggering"),
             ("Ctrl + K", "Key / BPM harmonizer"),
             ("F2", "VST3 browser: load an instrument on the selected pad"),
@@ -212,7 +228,11 @@ fn help(app: &mut App, ctx: &egui::Context) {
             ("Ctrl + Shift + Z / Y", "Step this pad's take stack back / forward"),
             ("Ctrl + C / V", "Copy / paste pad"),
             ("Ctrl + S / O", "Save / open project"),
-            ("Delete", "Clear pad (or pattern, in the piano roll)"),
+            ("Delete", "Clear pad (in the piano roll: the selected notes, or the pattern)"),
+            ("Piano roll: Shift + drag", "Box-select notes (Ctrl + A selects all)"),
+            ("Piano roll: Ctrl + drag", "Duplicate the selected notes (Ctrl + D repeats them)"),
+            ("Piano roll: Shift + Up / Down", "Selected notes up / down an octave"),
+            ("Piano roll: arrows", "Selected notes up / down a step, left / right a grid step"),
             ("Esc", "Cancel selection / arm, silence all voices"),
         ];
         egui::Grid::new("help_grid").num_columns(2).striped(true).show(ui, |ui| {

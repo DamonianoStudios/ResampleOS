@@ -17,13 +17,17 @@ pub enum FxKind {
     Reverb,
     /// A hosted VST3 effect; the instance lives in the engine's plugin slots.
     Vst,
+    /// Low shelf, mid bell, high shelf. Listed last so projects saved before it existed
+    /// still read back the same effects.
+    Eq,
 }
 
 impl FxKind {
-    pub const ALL: [FxKind; 9] = [
+    pub const ALL: [FxKind; 10] = [
         FxKind::None,
         FxKind::Vinyl,
         FxKind::Cassette,
+        FxKind::Eq,
         FxKind::Isolator,
         FxKind::Filter,
         FxKind::Crush,
@@ -44,6 +48,7 @@ impl FxKind {
             FxKind::Delay => "Tape Delay",
             FxKind::Reverb => "Reverb",
             FxKind::Vst => "VST3",
+            FxKind::Eq => "3-Band EQ",
         }
     }
 
@@ -59,6 +64,20 @@ impl FxKind {
             FxKind::Delay => ["Time", "Feedbk", "Mix"],
             FxKind::Reverb => ["Size", "Damp", "Mix"],
             FxKind::Vst => ["Mix", "", ""],
+            FxKind::Eq => ["Low", "Mid", "High"],
+        }
+    }
+
+    /// Names of the two slider parameters, for the effects that have them.
+    pub fn slider_names(self) -> Option<[&'static str; 2]> {
+        (self == FxKind::Eq).then_some(["Lo", "Hi"])
+    }
+
+    pub fn slider_defaults(self) -> [f32; 2] {
+        match self {
+            // About 200 Hz and 5 kHz.
+            FxKind::Eq => [0.6, 0.5],
+            _ => [0.0; 2],
         }
     }
 
@@ -74,8 +93,101 @@ impl FxKind {
             FxKind::Delay => [0.6, 0.4, 0.3],
             FxKind::Reverb => [0.5, 0.5, 0.25],
             FxKind::Vst => [1.0, 0.0, 0.0],
+            FxKind::Eq => [0.5, 0.5, 0.5],
         }
     }
+}
+
+/// How far each EQ band can cut or boost, in dB.
+pub const EQ_RANGE_DB: f32 = 15.0;
+
+/// Corner of the EQ's low shelf for a slider position: 40 Hz to 600 Hz.
+pub fn eq_low_hz(v: f32) -> f32 {
+    40.0 * 15f32.powf(v.clamp(0.0, 1.0))
+}
+
+/// Corner of the EQ's high shelf for a slider position: 1.5 kHz to 16 kHz.
+pub fn eq_high_hz(v: f32) -> f32 {
+    1500.0 * (16000.0f32 / 1500.0).powf(v.clamp(0.0, 1.0))
+}
+
+/// The EQ's mid bell sits halfway (in octaves) between the two shelves and is as wide
+/// as the gap between them, within reason.
+pub fn eq_mid(low_hz: f32, high_hz: f32) -> (f32, f32) {
+    let octaves = (high_hz / low_hz).log2();
+    ((low_hz * high_hz).sqrt(), (2.4 / octaves).clamp(0.4, 1.4))
+}
+
+/// One second-order section, transposed direct form II. Coefficients are normalised by a0.
+#[derive(Clone, Copy, Default)]
+pub struct Biquad {
+    b: [f32; 3],
+    a: [f32; 2],
+    z: [[f32; 2]; 2],
+}
+
+impl Biquad {
+    fn set(&mut self, b: [f32; 3], a: [f32; 3]) {
+        self.b = [b[0] / a[0], b[1] / a[0], b[2] / a[0]];
+        self.a = [a[1] / a[0], a[2] / a[0]];
+    }
+
+    /// A shelf at `hz` with a gentle (Butterworth-like) slope: low if `high` is false.
+    pub fn shelf(&mut self, high: bool, hz: f32, db: f32, sr: f32) {
+        let a = 10f32.powf(db / 40.0);
+        let w = 2.0 * PI * (hz / sr).min(0.49);
+        let (sin, cos) = w.sin_cos();
+        let beta = 2.0 * a.sqrt() * sin * std::f32::consts::FRAC_1_SQRT_2;
+        // The two shelves are mirror images: flip the sign of every cosine term.
+        let c = if high { -cos } else { cos };
+        self.set(
+            [a * ((a + 1.0) - (a - 1.0) * c + beta), 2.0 * a * ((a - 1.0) - (a + 1.0) * c), a * ((a + 1.0) - (a - 1.0) * c - beta)],
+            [(a + 1.0) + (a - 1.0) * c + beta, -2.0 * ((a - 1.0) + (a + 1.0) * c), (a + 1.0) + (a - 1.0) * c - beta],
+        );
+        if high {
+            self.b[1] = -self.b[1];
+            self.a[0] = -self.a[0];
+        }
+    }
+
+    pub fn bell(&mut self, hz: f32, q: f32, db: f32, sr: f32) {
+        let a = 10f32.powf(db / 40.0);
+        let w = 2.0 * PI * (hz / sr).min(0.49);
+        let alpha = w.sin() / (2.0 * q);
+        let cos = w.cos();
+        self.set([1.0 + alpha * a, -2.0 * cos, 1.0 - alpha * a], [1.0 + alpha / a, -2.0 * cos, 1.0 - alpha / a]);
+    }
+
+    #[inline]
+    fn tick(&mut self, ch: usize, x: f32) -> f32 {
+        let z = &mut self.z[ch];
+        let y = self.b[0] * x + z[0];
+        z[0] = self.b[1] * x - self.a[0] * y + z[1];
+        z[1] = self.b[2] * x - self.a[1] * y;
+        y
+    }
+
+    /// Gain in dB at `hz`, worked out from the coefficients.
+    #[cfg(test)]
+    fn db_at(&self, hz: f32, sr: f32) -> f32 {
+        let w = 2.0 * PI * hz / sr;
+        let (s1, c1) = w.sin_cos();
+        let (s2, c2) = (2.0 * w).sin_cos();
+        let mag = |k0: f32, k1: f32, k2: f32| ((k0 + k1 * c1 + k2 * c2).powi(2) + (k1 * s1 + k2 * s2).powi(2)).sqrt();
+        20.0 * (mag(self.b[0], self.b[1], self.b[2]) / mag(1.0, self.a[0], self.a[1]).max(1e-9)).max(1e-9).log10()
+    }
+}
+
+/// The three sections of the EQ for a slot's settings.
+pub fn eq_bands(params: [f32; 3], sliders: [f32; 2], sr: f32) -> [Biquad; 3] {
+    let db = |v: f32| (v - 0.5) * 2.0 * EQ_RANGE_DB;
+    let (low, high) = (eq_low_hz(sliders[0]), eq_high_hz(sliders[1]));
+    let (mid, q) = eq_mid(low, high);
+    let mut bands = [Biquad::default(); 3];
+    bands[0].shelf(false, low, db(params[0]), sr);
+    bands[1].bell(mid, q, db(params[1]), sr);
+    bands[2].shelf(true, high, db(params[2]), sr);
+    bands
 }
 
 /// Topology-preserving state variable filter, one channel.
@@ -164,6 +276,8 @@ pub struct Fx {
     last_kind: FxKind,
     /// Smoothed parameters; they chase the targets once per block.
     p: [f32; 3],
+    sliders: [f32; 2],
+    eq: [Biquad; 3],
     rng: Rng,
 
     // Short modulated delay for wow / flutter.
@@ -223,6 +337,8 @@ impl Fx {
             sr,
             last_kind: FxKind::None,
             p: [0.0; 3],
+            sliders: [0.0; 2],
+            eq: [Biquad::default(); 3],
             rng: Rng(0x9E3779B9),
             modl: vec![0.0; MOD_LEN],
             modr: vec![0.0; MOD_LEN],
@@ -264,6 +380,7 @@ impl Fx {
             }
         }
         self.svf = [Svf::default(); 4];
+        self.eq = [Biquad::default(); 3];
         self.lp = [0.0; 4];
         self.fb_lp = [0.0; 2];
         self.comp_env = 0.0;
@@ -289,15 +406,21 @@ impl Fx {
         out
     }
 
-    pub fn process(&mut self, kind: FxKind, target: [f32; 3], bpm: f32, l: &mut [f32], r: &mut [f32]) {
+    /// Processes one block in place. `target` is the slot's three knobs and `sliders` its
+    /// two slider parameters, all 0..1.
+    pub fn process(&mut self, kind: FxKind, target: [f32; 3], sliders: [f32; 2], bpm: f32, l: &mut [f32], r: &mut [f32]) {
         if kind != self.last_kind {
             // The fill is a one-off cost on a type change; no allocation involved.
             self.reset();
             self.last_kind = kind;
             self.p = target;
+            self.sliders = sliders;
         }
         for i in 0..3 {
             self.p[i] += (target[i] - self.p[i]) * 0.35;
+        }
+        for i in 0..2 {
+            self.sliders[i] += (sliders[i] - self.sliders[i]) * 0.35;
         }
         let p = self.p;
         let sr = self.sr;
@@ -375,6 +498,25 @@ impl Fx {
                     self.lp[1] += lp_a * (b - self.lp[1]);
                     l[i] = self.lp[0];
                     r[i] = self.lp[1];
+                }
+            }
+
+            FxKind::Eq => {
+                // New coefficients each block, on the smoothed settings; the filter state
+                // carries over, so a moving control glides rather than clicks.
+                let fresh = eq_bands(p, self.sliders, sr);
+                for (band, new) in self.eq.iter_mut().zip(fresh) {
+                    band.b = new.b;
+                    band.a = new.a;
+                }
+                for i in 0..n {
+                    let (mut a, mut b) = (l[i], r[i]);
+                    for band in self.eq.iter_mut() {
+                        a = band.tick(0, a);
+                        b = band.tick(1, b);
+                    }
+                    l[i] = a;
+                    r[i] = b;
                 }
             }
 
@@ -513,5 +655,69 @@ impl Fx {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Level in dB of a sine at `hz` after the EQ, relative to the input.
+    fn eq_gain(hz: f32, params: [f32; 3], sliders: [f32; 2]) -> f32 {
+        let sr = 48000.0;
+        let mut fx = Fx::new(sr);
+        // Compared by energy: the peaks of a sampled sine depend on where the samples fall.
+        let (mut dry, mut wet) = (0f64, 0f64);
+        for block in 0..200 {
+            let mut l: Vec<f32> = (0..256).map(|i| ((block * 256 + i) as f32 * 2.0 * PI * hz / sr).sin()).collect();
+            let mut r = l.clone();
+            let before: f64 = l.iter().map(|v| (*v as f64).powi(2)).sum();
+            fx.process(FxKind::Eq, params, sliders, 120.0, &mut l, &mut r);
+            if block > 150 {
+                dry += before;
+                wet += r.iter().map(|v| (*v as f64).powi(2)).sum::<f64>();
+            }
+        }
+        (10.0 * (wet / dry).log10()) as f32
+    }
+
+    #[test]
+    fn eq_is_flat_with_the_knobs_centred() {
+        for hz in [50.0, 300.0, 1000.0, 5000.0, 12000.0] {
+            assert!(eq_gain(hz, [0.5; 3], [0.6, 0.5]).abs() < 0.05, "{hz} Hz");
+        }
+    }
+
+    #[test]
+    fn eq_bands_act_where_they_should() {
+        let sliders = [0.6, 0.5]; // about 200 Hz and 5 kHz
+        // Low shelf up: the bottom rises by the full amount, the top is left alone.
+        assert!((eq_gain(40.0, [1.0, 0.5, 0.5], sliders) - EQ_RANGE_DB).abs() < 1.0);
+        assert!(eq_gain(8000.0, [1.0, 0.5, 0.5], sliders).abs() < 0.5);
+        // High shelf down: the reverse.
+        assert!((eq_gain(15000.0, [0.5, 0.5, 0.0], sliders) + EQ_RANGE_DB).abs() < 1.0);
+        assert!(eq_gain(60.0, [0.5, 0.5, 0.0], sliders).abs() < 0.5);
+        // The bell peaks between the two corners and falls away either side.
+        let (mid, _) = eq_mid(eq_low_hz(sliders[0]), eq_high_hz(sliders[1]));
+        let at = |hz: f32| eq_gain(hz, [0.5, 1.0, 0.5], sliders);
+        assert!((at(mid) - EQ_RANGE_DB).abs() < 0.5);
+        assert!(at(40.0) < 3.0 && at(15000.0) < 3.0);
+    }
+
+    #[test]
+    fn eq_response_curve_matches_the_filter() {
+        let (params, sliders, sr) = ([0.8, 0.3, 0.9], [0.4, 0.7], 48000.0);
+        let bands = eq_bands(params, sliders, sr);
+        for hz in [80.0, 700.0, 9000.0] {
+            let drawn: f32 = bands.iter().map(|b| b.db_at(hz, sr)).sum();
+            assert!((drawn - eq_gain(hz, params, sliders)).abs() < 0.2, "{hz} Hz");
+        }
+    }
+
+    #[test]
+    fn moving_the_cutoffs_moves_the_shelves() {
+        // 300 Hz is inside a low shelf set to 600 Hz and outside one set to 40 Hz.
+        assert!(eq_gain(300.0, [1.0, 0.5, 0.5], [1.0, 0.5]) > 9.0);
+        assert!(eq_gain(300.0, [1.0, 0.5, 0.5], [0.0, 0.5]) < 2.0);
     }
 }

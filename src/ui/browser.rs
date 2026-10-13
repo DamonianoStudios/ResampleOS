@@ -19,7 +19,7 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
         }
     };
     let mut open = true;
-    let mut load: Option<std::path::PathBuf> = None;
+    let mut load: Option<(std::path::PathBuf, Option<String>)> = None;
     let extra_dirs = app.prefs.vst3_dirs.clone();
     egui::Window::new(format!("VST3 Plugins: {target_name}"))
         .open(&mut open)
@@ -98,7 +98,8 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
             // Enter loads the top match, so search-and-go needs no mouse.
             let enter = ui.input(|i| i.key_pressed(Key::Enter));
             if enter && filter != 3 {
-                load = Some(app.catalog.entries[shown[0]].path.clone());
+                let e = &app.catalog.entries[shown[0]];
+                load = Some((e.path.clone(), e.class_id.clone()));
             }
 
             let row_h = 22.0;
@@ -120,7 +121,7 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
                             }
                         }
                         if e.error.is_none() && (resp.double_clicked() || resp.clicked() && ui.input(|i| i.modifiers.command)) {
-                            load = Some(e.path.clone());
+                            load = Some((e.path.clone(), e.class_id.clone()));
                         }
                         resp.on_hover_text(format!("{}\nDouble-click to load", e.path.display()));
                     });
@@ -128,9 +129,9 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
             });
         });
 
-    if let Some(path) = load {
+    if let Some((path, class_id)) = load {
         let target = app.browser.target;
-        if app.load_plugin(&path, target, None) {
+        if app.load_plugin(&path, class_id.as_deref(), target, None) {
             app.browser.open = false;
             app.open_editor(target);
             if let PluginTarget::Pad(i) = target {

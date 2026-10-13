@@ -35,3 +35,7 @@ opt-level = 3
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# vst3-host with two fixes for plugin editors that show metering. See vendor/README.md.
+[patch.crates-io]
+vst3-host = { path = "vendor/vst3-host" }

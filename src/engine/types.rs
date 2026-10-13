@@ -31,6 +31,45 @@ pub enum LfoTarget {
     Filter,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum LfoShape {
+    #[default]
+    Sine,
+    Triangle,
+    Saw,
+    Square,
+}
+
+impl LfoShape {
+    pub const ALL: [LfoShape; 4] = [LfoShape::Sine, LfoShape::Triangle, LfoShape::Saw, LfoShape::Square];
+
+    /// The wave at `phase` (in cycles), from -1 to 1. Every shape starts its cycle at or
+    /// heading away from zero in the same direction, so switching shape keeps the feel.
+    pub fn at(self, phase: f64) -> f32 {
+        let p = phase.rem_euclid(1.0) as f32;
+        match self {
+            LfoShape::Sine => (p * std::f32::consts::TAU).sin(),
+            LfoShape::Triangle => 1.0 - 4.0 * ((p + 0.25).fract() - 0.5).abs(),
+            LfoShape::Saw => 1.0 - 2.0 * p,
+            LfoShape::Square => {
+                if p < 0.5 {
+                    1.0
+                } else {
+                    -1.0
+                }
+            }
+        }
+    }
+}
+
+/// Where an LFO is in its cycle, given the engine's two clocks.
+pub fn lfo_phase(cfg: &PadCfg, beat_ticks: f64, seconds: f64) -> f64 {
+    match crate::music::lfo_sync_ticks(cfg.lfo_sync) {
+        Some(ticks) => beat_ticks / ticks,
+        None => seconds * cfg.lfo_rate as f64,
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum MidiTarget {
     Synth,
@@ -65,6 +104,12 @@ pub struct PadCfg {
     pub lfo_rate: f32,
     pub lfo_depth: f32,
     pub lfo_target: LfoTarget,
+    #[serde(default)]
+    pub lfo_shape: LfoShape,
+    /// 0 = free, at `lfo_rate` Hz; otherwise a note value locked to the tempo. See
+    /// [`crate::music::lfo_sync`].
+    #[serde(default)]
+    pub lfo_sync: u8,
     pub target: MidiTarget,
     pub synth: SynthParams,
     /// Humanize, 0..1: how far sequenced notes may drift off the grid, and how much their
@@ -98,6 +143,8 @@ impl Default for PadCfg {
             lfo_rate: 2.0,
             lfo_depth: 0.0,
             lfo_target: LfoTarget::Off,
+            lfo_shape: LfoShape::Sine,
+            lfo_sync: 0,
             target: MidiTarget::Synth,
             synth: SynthParams::default(),
             human_time: 0.0,
@@ -109,8 +156,19 @@ impl Default for PadCfg {
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub struct SlotCfg {
     pub kind: FxKind,
+    /// The three knobs.
     pub params: [f32; 3],
+    /// Two further parameters, shown as sliders by the effects that use them.
+    #[serde(default)]
+    pub sliders: [f32; 2],
     pub on: bool,
+}
+
+impl SlotCfg {
+    /// A slot holding `kind` at its default settings.
+    pub fn new(kind: FxKind, on: bool) -> SlotCfg {
+        SlotCfg { kind, params: kind.defaults(), sliders: kind.slider_defaults(), on }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
@@ -142,7 +200,7 @@ impl Default for BusCfg {
             level: 1.0,
             mute: false,
             out: 0,
-            slots: [SlotCfg { kind: FxKind::None, params: [0.0; 3], on: true }; 3],
+            slots: [SlotCfg::new(FxKind::None, true); 3],
             sc_src: 0,
             sc_amount: -0.7,
             sc_release: default_sc_release(),
@@ -178,7 +236,22 @@ impl Default for Pattern {
     }
 }
 
+/// The patterns of a loop that is waiting to take over from the one playing.
+pub struct SceneSwap {
+    pub index: u32,
+    pub len_ticks: u32,
+    /// Take over at the next bar line rather than when the playing loop ends.
+    pub next_bar: bool,
+    /// Every pad that has a pattern in either loop. After the switch this holds the
+    /// outgoing patterns, and the whole thing goes back to the UI to be dropped.
+    pub patterns: Vec<(u16, Option<Arc<Pattern>>)>,
+}
+
 pub enum Cmd {
+    /// Length of the playing loop; the transport wraps here. 0 = never.
+    SceneLen(u32),
+    /// Line up the next loop, or cancel the one lined up.
+    QueueScene(Option<Box<SceneSwap>>),
     SetPadPlugin { pad: u16, plugin: Option<Box<PluginRt>> },
     /// `slot` is `bus * 3 + slot`.
     SetFxPlugin { slot: u8, plugin: Option<Box<PluginRt>> },
@@ -210,6 +283,7 @@ pub enum Cmd {
 pub enum Garbage {
     Sample(Arc<SampleData>),
     Pattern(Arc<Pattern>),
+    Scene(Box<SceneSwap>),
     Input(Consumer<f32>),
     Plugin(Box<PluginRt>),
 }

@@ -4,10 +4,18 @@ mod conform;
 mod history;
 mod input;
 mod pads;
+mod play;
 mod plugins;
+mod roll;
+mod scenes;
+mod state;
 
 pub use history::History;
 pub use pads::PadAction;
+pub use scenes::{MAX_CHAIN, MAX_SCENES, Scene};
+pub use state::*;
+
+use play::PendingNote;
 
 use crate::analysis::{self, Analysis};
 use crate::audio_io;
@@ -27,133 +35,6 @@ use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel};
-
-/// Computer-keyboard pad grid, bottom row first (pads 1-4), matching the 4x4 on screen.
-pub const PAD_KEYS: [egui::Key; 16] = {
-    use egui::Key::*;
-    [N, Comma, Period, Slash, H, J, K, L, Y, U, I, O, Num6, Num7, Num8, Num9]
-};
-pub const PAD_KEY_LABELS: [&str; 16] =
-    ["N", ",", ".", "/", "H", "J", "K", "L", "Y", "U", "I", "O", "6", "7", "8", "9"];
-
-pub const ROLL_DIVS: [(&str, u32); 6] =
-    [("1/8", 240), ("1/8T", 160), ("1/16", 120), ("1/16T", 80), ("1/32", 60), ("1/32T", 40)];
-pub const SNAPS: [(&str, u32); 7] =
-    [("Off", 1), ("1/4", 480), ("1/8", 240), ("1/16", 120), ("1/32", 60), ("1/8T", 160), ("1/16T", 80)];
-
-#[derive(Clone, Copy, PartialEq)]
-pub enum Tab {
-    Wave,
-    Roll,
-    Steps,
-    Mod,
-}
-
-#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum ConformMode {
-    Strict,
-    Smart,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub enum Resample {
-    Idle,
-    /// Waiting for a pad hit to choose the destination.
-    Armed,
-    Recording { target: usize, start: u64, bar_aligned: bool },
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub enum PluginTarget {
-    /// Instrument on a pad.
-    Pad(usize),
-    /// Effect in (bus, slot).
-    Fx(usize, usize),
-}
-
-pub struct Browser {
-    pub open: bool,
-    pub query: String,
-    /// 0 = all, 1 = instruments, 2 = effects, 3 = failed.
-    pub filter: u8,
-    pub target: PluginTarget,
-}
-
-pub enum Dest {
-    Pad(usize),
-    NextEmpty,
-    Slice,
-}
-
-pub enum JobResult {
-    Loaded { pad: usize, name: String, sample: SampleData, analysis: Analysis },
-    Conformed { pad: usize, sample: SampleData, note: String },
-    Failed(String),
-}
-
-/// What the Key/BPM Harmonizer believes about the focused pad; editable before conforming.
-#[derive(Clone, Copy)]
-pub struct Harmonizer {
-    pub open: bool,
-    pub bpm: f32,
-    pub root: u8,
-    pub minor: bool,
-    pub tempo: bool,
-    pub key: bool,
-}
-
-pub struct RollUi {
-    pub snap: usize,
-    pub scale_lock: bool,
-    pub ghosts: bool,
-    pub rec: bool,
-    /// Highest pitch currently visible (fractional so smooth scrolling accumulates).
-    pub top_f: f32,
-    pub last_len: u32,
-    pub drag: Option<RollDrag>,
-}
-
-#[derive(Clone, Copy)]
-pub struct RollDrag {
-    pub idx: usize,
-    pub resize: bool,
-    pub grab_tick: i64,
-}
-
-pub struct SkipUi {
-    pub window_secs: f32,
-    /// Selection in absolute ring frames.
-    pub sel: Option<(u64, u64)>,
-    /// While set, the display stops scrolling so the selection can be made.
-    pub frozen_end: Option<u64>,
-    pub mark_in: Option<u64>,
-    pub dragging_out: bool,
-}
-
-impl SkipUi {
-    /// The selection in time order, or `None` if there isn't one worth the name.
-    pub fn selection(&self) -> Option<(u64, u64)> {
-        let (a, b) = self.sel?;
-        (a.abs_diff(b) >= 64).then(|| (a.min(b), a.max(b)))
-    }
-
-    /// Drops any selection and lets the display follow the audio again. The display is
-    /// only ever held still for a selection, so clearing one must always release it.
-    pub fn resume(&mut self) {
-        self.sel = None;
-        self.frozen_end = None;
-        self.mark_in = None;
-        self.dragging_out = false;
-    }
-}
-
-struct PendingNote {
-    key: u32,
-    pad: usize,
-    pitch: u8,
-    vel: u8,
-    start: f64,
-}
 
 pub struct App {
     pub shared: Arc<Shared>,
@@ -182,7 +63,7 @@ pub struct App {
     pub catalog: Catalog,
     pub browser: Browser,
     /// Open plugin editor windows, keyed by `PluginSlot::id`.
-    editors: Vec<(usize, vst3_host::PluginWindow)>,
+    editors: Vec<plugins::EditorWin>,
     /// Bus effect plugins, indexed `bus * 3 + slot`.
     pub fx_plugins: Vec<Option<PluginSlot>>,
     synced_transport: (f32, bool),
@@ -201,6 +82,12 @@ pub struct App {
     pub auto_conform: bool,
     pub preserve_transients: bool,
     pub project_dir: Option<PathBuf>,
+    /// Loops. The pads hold the patterns of `scenes[scene]`.
+    pub scenes: Vec<Scene>,
+    pub scene: usize,
+    /// Loops to play one after another, by index into `scenes`.
+    pub chain: Vec<usize>,
+    pub chain_on: bool,
 
     // Session state.
     pub bank: usize,
@@ -241,6 +128,18 @@ pub struct App {
     pub step_res: u32,
     pub step_bars: u32,
     pub step_paint: Option<bool>,
+    /// Choke matrix: whether a drag is assigning or clearing.
+    pub choke_paint: Option<bool>,
+
+    /// Perform mode: the pad matrix launches loops.
+    pub perform: bool,
+    /// The loop the engine has been asked to bring in next.
+    pub queued_scene: Option<usize>,
+    /// Which chain entry is playing.
+    pub chain_pos: usize,
+    /// Launch on the next bar line rather than at the end of the playing loop.
+    pub launch_on_bar: bool,
+    seen_starts: u32,
 }
 
 impl App {
@@ -291,6 +190,10 @@ impl App {
             auto_conform: false,
             preserve_transients: true,
             project_dir: None,
+            scenes: vec![Scene::new(2)],
+            scene: 0,
+            chain: Vec::new(),
+            chain_on: false,
             bank: 0,
             selected: 0,
             zoom: 0,
@@ -306,7 +209,7 @@ impl App {
             resample: Resample::Idle,
             skip: SkipUi { window_secs: 30.0, sel: None, frozen_end: None, mark_in: None, dragging_out: false },
             harm: Harmonizer { open: false, bpm: 120.0, root: 0, minor: false, tempo: true, key: true },
-            roll: RollUi { snap: 3, scale_lock: true, ghosts: true, rec: false, top_f: 72.0, last_len: 120, drag: None },
+            roll: RollUi { snap: 3, scale_lock: true, ghosts: true, rec: false, top_f: 72.0, last_len: 120, drag: None, sel: Vec::new(), sel_pad: 0, marquee: None },
             show_choke: false,
             show_help: false,
             sensitivity: 0.5,
@@ -326,22 +229,42 @@ impl App {
             step_res: 120,
             step_bars: 1,
             step_paint: None,
+            choke_paint: None,
+            perform: false,
+            queued_scene: None,
+            chain_pos: 0,
+            launch_on_bar: false,
+            seen_starts: 0,
         };
         // The spec's default performance chain on Bus 1.
         app.buses[0].slots = [
-            SlotCfg { kind: FxKind::Vinyl, params: FxKind::Vinyl.defaults(), on: true },
-            SlotCfg { kind: FxKind::Cassette, params: FxKind::Cassette.defaults(), on: false },
-            SlotCfg { kind: FxKind::Isolator, params: FxKind::Isolator.defaults(), on: true },
+            SlotCfg::new(FxKind::Vinyl, true),
+            SlotCfg::new(FxKind::Cassette, false),
+            SlotCfg::new(FxKind::Isolator, true),
         ];
         app.push_all();
-        // Files passed on the command line (or via "Open with") fill pads from A01.
-        for (i, path) in std::env::args_os().skip(1).take(16).enumerate() {
-            app.load_file(i, PathBuf::from(path));
+        // A project folder on the command line opens that project; audio files (also via
+        // "Open with") fill pads from A01.
+        let args: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+        let mut opened = None;
+        if let Some(dir) = args.first().filter(|p| p.join("project.json").is_file()) {
+            opened = Some(match crate::project::load(&mut app, dir) {
+                Ok(n) => {
+                    app.project_dir = Some(dir.clone());
+                    format!("Opened {} ({n} pads)", dir.display())
+                }
+                Err(e) => format!("Open failed: {e}"),
+            });
+        } else {
+            for (i, path) in args.into_iter().take(16).enumerate() {
+                app.load_file(i, path);
+            }
         }
         let loading = app.busy > 0;
         app.status = match &app.audio_error {
             Some(e) => format!("Audio unavailable: {e}"),
             None if loading => app.status.clone(),
+            None if opened.is_some() => opened.unwrap_or_default(),
             None if audio_note.is_some() => audio_note.unwrap_or_default(),
             None => format!("{} @ {} Hz", app.device_name, app.shared.sample_rate),
         };
@@ -373,7 +296,9 @@ impl App {
         // An audio pad with no steps has nothing to sequence.
         let pattern = (p.cfg.kind == PadKind::Midi || !p.pattern.notes.is_empty())
             .then(|| Arc::new(p.pattern.clone()));
+        let ticks = if p.pattern.notes.is_empty() { 0 } else { p.pattern.len_ticks };
         self.send(Cmd::SetPattern { pad: idx as u16, pattern });
+        self.fit_scene_to(ticks);
     }
 
     pub fn push_bus(&mut self, bus: usize) {
@@ -412,121 +337,11 @@ impl App {
         self.push_plugin(i);
     }
 
-    pub fn playing(&self) -> bool {
-        self.shared.playing.load(Ordering::Relaxed)
-    }
-
-    pub fn toggle_play(&mut self) {
-        let on = !self.playing();
-        if on
-            && let Resample::Recording { target, bar_aligned: false, .. } = self.resample {
-                // Starting the transport mid-take restarts the take on the downbeat.
-                self.resample =
-                    Resample::Recording { target, start: self.shared.ring.written(), bar_aligned: true };
-            }
-        self.send(Cmd::Play(on));
-    }
-
-    /// Semitone offset for the i-th key of a chromatic spread.
-    pub fn spread_semis(&self, i: i32) -> f32 {
-        let s = match self.conform_mode {
-            ConformMode::Strict => i,
-            ConformMode::Smart => self.key.degree_semis(i),
-        };
-        (s + self.octave * 12) as f32
-    }
-
-    /// A hit on pad slot `i` (0..16) of the visible bank, from keyboard or mouse.
-    pub fn slot_hit(&mut self, i: usize, key: u32) -> (u16, u32) {
-        if self.chromatic {
-            let semis = self.spread_semis(i as i32);
-            self.note_on(self.selected, semis, 0.9, key);
-            (self.selected as u16, key)
-        } else {
-            let pad = self.bank * 16 + i;
-            self.pad_hit(pad, key);
-            (pad as u16, key)
-        }
-    }
-
-    pub fn pad_hit(&mut self, pad: usize, key: u32) {
-        if pad >= self.pads.len() {
-            return;
-        }
-        if self.m_down {
-            self.pads[pad].cfg.mute ^= true;
-            self.push_pad(pad);
-            return;
-        }
-        if self.q_down {
-            self.stop_pad(pad);
-            return;
-        }
-        if self.resample != Resample::Armed {
-            self.select(pad);
-        }
-        let semis = if self.pads[pad].cfg.kind == PadKind::Midi { (self.octave * 12) as f32 } else { 0.0 };
-        self.note_on(pad, semis, 0.9, key);
-    }
-
-    pub fn note_on(&mut self, pad: usize, semis: f32, vel: f32, key: u32) {
-        if self.resample == Resample::Armed {
-            self.begin_recording(pad);
-            return;
-        }
-        self.send(Cmd::PadOn { pad: pad as u16, vel, semis, key });
-        self.record_on(pad, semis, vel, key);
-    }
-
-    pub fn note_off(&mut self, pad: u16, key: u32) {
-        self.send(Cmd::PadOff { pad, key });
-        self.record_off(key);
-    }
-
-    pub fn select(&mut self, pad: usize) {
-        if pad < self.pads.len() && pad != self.selected {
-            self.selected = pad;
-            self.wave_view = (0.0, 1.0);
-            self.roll.drag = None;
-        }
-    }
-
-    fn record_on(&mut self, pad: usize, semis: f32, vel: f32, key: u32) {
-        if !self.roll.rec || !self.playing() {
-            return;
-        }
-        // Audio pads record as steps at their own pitch; MIDI pads record the note played.
-        let semis = if self.pads[pad].cfg.kind == PadKind::Midi { semis } else { 0.0 };
-        let pitch = (60.0 + semis).round().clamp(0.0, 127.0) as u8;
-        self.pending.push(PendingNote {
-            key,
-            pad,
-            pitch,
-            vel: (vel * 127.0) as u8,
-            start: self.shared.tick(),
-        });
-    }
-
-    fn record_off(&mut self, key: u32) {
-        let Some(at) = self.pending.iter().position(|p| p.key == key) else { return };
-        let p = self.pending.swap_remove(at);
-        let snap = SNAPS[self.roll.snap].1 as f64;
-        let len_ticks = self.pads[p.pad].pattern.len_ticks.max(1) as f64;
-        let len = (self.shared.tick() - p.start).max(30.0);
-        let start = ((p.start / snap).round() * snap).rem_euclid(len_ticks);
-        self.pads[p.pad].pattern.notes.push(Note {
-            start: start as u32,
-            len: len as u32,
-            pitch: p.pitch,
-            vel: p.vel.max(1),
-        });
-        self.push_pattern(p.pad);
-    }
-
     fn poll(&mut self) {
         // Buffers and plugins the engine has let go of are freed here, off the audio thread.
         while self.garbage.pop().is_ok() {}
         self.service_plugins();
+        self.poll_scenes();
 
         while let Ok(job) = self.jobs_rx.try_recv() {
             self.busy = self.busy.saturating_sub(1);
@@ -575,7 +390,9 @@ impl App {
             match ev {
                 MidiEvent::NoteOn { pad, semis, vel, key, is_pad } => {
                     let pad = pad as usize;
-                    if self.resample == Resample::Armed {
+                    if self.perform && is_pad {
+                        self.launch_scene(pad % 16);
+                    } else if self.resample == Resample::Armed {
                         self.begin_recording(pad);
                     } else {
                         if is_pad && !self.chromatic {
@@ -624,7 +441,10 @@ impl App {
         // Keep the engine-level fields as they are running, so the window keeps saying
         // a restart is pending until one happens.
         self.prefs.ui_scale = self.prefs_edit.ui_scale;
-        self.prefs.vst3_dirs = self.prefs_edit.vst3_dirs.clone();
+        if self.prefs.vst3_dirs != self.prefs_edit.vst3_dirs {
+            self.prefs.vst3_dirs = self.prefs_edit.vst3_dirs.clone();
+            self.catalog.start_scan(false, &self.prefs.vst3_dirs);
+        }
         self.show_prefs = false;
     }
 
@@ -636,6 +456,8 @@ impl App {
             || self.catalog.scanning
             || self.resample != Resample::Idle
             || !self.editors.is_empty()
+            // The LFO scope follows the engine.
+            || (self.tab == Tab::Mod && self.pads[self.selected].cfg.lfo_target != crate::engine::LfoTarget::Off)
             || self.input_sel.is_some()
             || level(MASTER * 2).max(level(MASTER * 2 + 1)) > 1e-4
             || ctx.input(|i| i.pointer.any_down())

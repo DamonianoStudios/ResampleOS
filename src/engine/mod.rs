@@ -96,7 +96,14 @@ pub struct Engine {
     playing: bool,
     bpm: f32,
     swing: f32,
+    /// Ticks since the playing loop started.
     tick: f64,
+    scene_len: u32,
+    queued: Option<Box<SceneSwap>>,
+    /// How many loops have started since Play, so humanize differs on every pass.
+    scene_pass: i64,
+    /// Ticks since Play, never wrapped: what tempo-synced LFOs count from.
+    song_tick: f64,
     /// Runs whether or not the transport does, so note repeat works when stopped.
     free_tick: f64,
     metronome: bool,
@@ -167,6 +174,10 @@ impl Engine {
             bpm: 90.0,
             swing: 0.5,
             tick: 0.0,
+            scene_len: 0,
+            queued: None,
+            scene_pass: 0,
+            song_tick: 0.0,
             free_tick: 0.0,
             metronome: false,
             click_phase: 0.0,
@@ -204,6 +215,49 @@ impl Engine {
     fn trash(&mut self, g: Garbage) {
         // If the queue is full the drop happens here; rare, and better than leaking.
         let _ = self.garbage.push(g);
+    }
+
+    fn silence_pad(&mut self, pad: u16) {
+        for v in self.voices.iter_mut() {
+            if v.active && (v.pad == pad || v.owner == pad) {
+                v.killed = true;
+            }
+        }
+        for v in self.synths.iter_mut() {
+            if v.active && v.pad == pad {
+                v.released = true;
+            }
+        }
+    }
+
+    /// The playing loop has reached its end (or the bar line a queued loop was waiting
+    /// for). Brings in the queued loop if there is one; otherwise the same loop goes round.
+    pub(super) fn next_scene(&mut self) {
+        self.scene_pass += 1;
+        // Start clean: a long sample or a held synth note from the loop that just ended
+        // would otherwise carry on over the next one, or double up with its own restart.
+        // Short hits are left to ring out.
+        for k in 0..self.seq_pads.len() {
+            let pad = self.seq_pads[k];
+            let p = &self.pads[pad as usize];
+            let lingers = p.cfg.kind == PadKind::Midi || p.sample.as_ref().is_some_and(|s| s.len() as f32 > self.sr * 2.0);
+            if lingers {
+                self.silence_pad(pad);
+            }
+        }
+        if let Some(mut q) = self.queued.take() {
+            for k in 0..q.patterns.len() {
+                let pad = q.patterns[k].0;
+                if (pad as usize) < MAX_PADS {
+                    std::mem::swap(&mut self.pads[pad as usize].pattern, &mut q.patterns[k].1);
+                    self.refresh_seq(pad);
+                }
+            }
+            self.scene_len = q.len_ticks;
+            self.shared.scene_index.store(q.index, Ordering::Relaxed);
+            self.trash(Garbage::Scene(q));
+        }
+        self.shared.scene_starts.fetch_add(1, Ordering::Relaxed);
     }
 
     fn refresh_seq(&mut self, pad: u16) {
@@ -336,9 +390,22 @@ impl Engine {
                     self.buses[bus as usize] = cfg;
                 }
             }
+            Cmd::SceneLen(len) => {
+                self.scene_len = len;
+                if len > 0 {
+                    self.tick = self.tick.rem_euclid(len as f64);
+                }
+            }
+            Cmd::QueueScene(scene) => {
+                if let Some(old) = std::mem::replace(&mut self.queued, scene) {
+                    self.trash(Garbage::Scene(old));
+                }
+            }
             Cmd::Play(on) => {
                 if on && !self.playing {
                     self.tick = 0.0;
+                    self.scene_pass = 0;
+                    self.song_tick = 0.0;
                 }
                 if !on {
                     // Stop also ends sequenced notes and free-running loops.
@@ -360,16 +427,7 @@ impl Engine {
             Cmd::Metronome(on) => self.metronome = on,
             Cmd::RingSource(s) => self.ring_src = s.min(5),
             Cmd::StopPad { pad } => {
-                for v in self.voices.iter_mut() {
-                    if v.active && (v.pad == pad || v.owner == pad) {
-                        v.killed = true;
-                    }
-                }
-                for v in self.synths.iter_mut() {
-                    if v.active && v.pad == pad {
-                        v.released = true;
-                    }
-                }
+                self.silence_pad(pad);
                 for h in self.held.iter_mut() {
                     if matches!(h, Some(x) if x.pad == pad) {
                         *h = None;

@@ -88,7 +88,8 @@ pub fn start(shared: Arc<Shared>, tx: Producer<Cmd>, ui: Sender<MidiEvent>) -> M
                         let (pad, semis, is_pad) = map_note(&shared, d1);
                         let key = 0x4000_0000 | d1 as u32;
                         let vel = (d2 as f32 / 127.0).powf(0.7);
-                        if !shared.ui_capture_pads.load(Ordering::Relaxed) {
+                        let launching = is_pad && shared.ui_perform.load(Ordering::Relaxed);
+                        if !launching && !shared.ui_capture_pads.load(Ordering::Relaxed) {
                             if let Ok(mut tx) = tx.lock() {
                                 let _ = tx.push(Cmd::PadOn { pad, vel, semis, key });
                             }

@@ -2,6 +2,27 @@
 
 use super::*;
 
+/// An open plugin editor window.
+pub(super) struct EditorWin {
+    id: usize,
+    window: vst3_host::PluginWindow,
+    handle: Arc<Mutex<vst3_host::Plugin>>,
+}
+
+impl EditorWin {
+    /// Lets the plugin hand what its processor reported since the last frame to its editor:
+    /// output parameter points (meters, gain-reduction readouts) and data-exchange blocks
+    /// are written on the audio thread and have to be delivered on this one.
+    fn feed(&mut self) {
+        // Never wait here: the audio thread holds this lock for most of every block.
+        let Ok(mut p) = self.handle.try_lock() else { return };
+        let _ = p.get_parameter_changes();
+        let _ = p.take_data_exchange_blocks();
+        let _ = p.take_parameter_edits();
+        let _ = p.take_host_notifications();
+    }
+}
+
 impl App {
     pub(super) fn rt_for(&self, slot: &PluginSlot) -> Box<PluginRt> {
         PluginRt::new(slot.handle.clone(), self.shared.sample_rate as f64)
@@ -35,7 +56,14 @@ impl App {
     }
 
     /// Instantiates a plugin and puts it on a pad or in a bus slot, replacing what was there.
-    pub fn load_plugin(&mut self, path: &std::path::Path, target: PluginTarget, state: Option<&[u8]>) -> bool {
+    /// `class_id` picks one plugin out of a file that holds several; `None` takes the first.
+    pub fn load_plugin(
+        &mut self,
+        path: &std::path::Path,
+        class_id: Option<&str>,
+        target: PluginTarget,
+        state: Option<&[u8]>,
+    ) -> bool {
         let rate = self.shared.sample_rate as f64;
         if self.host.is_none() {
             let built = vst3_host::Vst3Host::builder()
@@ -51,7 +79,12 @@ impl App {
                 }
             }
         }
-        let loaded = self.host.as_mut().unwrap().load_plugin(path).and_then(|mut p| {
+        let host = self.host.as_mut().unwrap();
+        let loaded = match class_id {
+            Some(id) => host.load_plugin_class(path, id),
+            None => host.load_plugin(path),
+        };
+        let loaded = loaded.and_then(|mut p| {
             if let Some(bytes) = state {
                 // A stale or foreign state is not fatal; the plugin just keeps its defaults.
                 let _ = p.load_state(bytes);
@@ -68,7 +101,12 @@ impl App {
         };
         let _ = plugin.set_tempo(self.bpm as f64);
         let name = plugin.info().name.clone();
-        let slot = PluginSlot { path: path.to_path_buf(), name: name.clone(), handle: Arc::new(Mutex::new(plugin)) };
+        let slot = PluginSlot {
+            path: path.to_path_buf(),
+            class_id: class_id.map(str::to_string),
+            name: name.clone(),
+            handle: Arc::new(Mutex::new(plugin)),
+        };
         match target {
             PluginTarget::Pad(i) if i < self.pads.len() => {
                 let p = &mut self.pads[i];
@@ -82,7 +120,7 @@ impl App {
                 let rt = self.rt_for(&slot);
                 self.fx_plugins[b * 3 + s] = Some(slot);
                 self.send(Cmd::SetFxPlugin { slot: (b * 3 + s) as u8, plugin: Some(rt) });
-                self.buses[b].slots[s] = SlotCfg { kind: FxKind::Vst, params: FxKind::Vst.defaults(), on: true };
+                self.buses[b].slots[s] = SlotCfg::new(FxKind::Vst, true);
                 self.push_bus(b);
             }
             _ => return false,
@@ -115,13 +153,13 @@ impl App {
     pub fn open_editor(&mut self, target: PluginTarget) {
         let Some(slot) = self.plugin_slot(target) else { return };
         let (id, name, handle) = (slot.id(), slot.name.clone(), slot.handle.clone());
-        if self.editors.iter().any(|(k, w)| *k == id && w.is_open()) {
+        if self.editors.iter().any(|e| e.id == id && e.window.is_open()) {
             return;
         }
-        self.editors.retain(|(k, _)| *k != id);
-        let mut window = vst3_host::PluginWindow::new(handle);
+        self.editors.retain(|e| e.id != id);
+        let mut window = vst3_host::PluginWindow::new(handle.clone());
         match window.open() {
-            Ok(()) => self.editors.push((id, window)),
+            Ok(()) => self.editors.push(EditorWin { id, window, handle }),
             Err(e) => self.status = format!("{name}: {e}"),
         }
     }
@@ -143,11 +181,13 @@ impl App {
                 .chain(self.fx_plugins.iter().flatten())
                 .map(|s| s.id())
                 .collect();
-            self.editors.retain_mut(|(id, w)| {
-                let _ = w.service_platform_events();
-                let keep = live.contains(id) && !w.closed_by_user();
-                if !keep {
-                    w.close();
+            self.editors.retain_mut(|e| {
+                let _ = e.window.service_platform_events();
+                let keep = live.contains(&e.id) && !e.window.closed_by_user();
+                if keep {
+                    e.feed();
+                } else {
+                    e.window.close();
                 }
                 keep
             });

@@ -1,7 +1,8 @@
 //! Zone C: four performance buses and the master, three effect slots each.
 
-use super::{knob, meter, theme, toggle};
+use super::{fader, knob, knob_sized, meter, theme, toggle};
 use crate::app::{App, PluginTarget};
+use crate::engine::SlotCfg;
 use crate::fx::FxKind;
 use crate::shared::{MASTER, NUM_BUSES, f32_load};
 use eframe::egui::{self, Rect, Sense, Ui, vec2};
@@ -16,6 +17,10 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
         let border = (app.focus_bus == b).then_some(accent);
         theme::card_in(ui, rect, border, |ui| strip(app, ui, b));
     }
+}
+
+fn hertz(hz: f32) -> String {
+    if hz >= 1000.0 { format!("{:.1} kHz", hz / 1000.0) } else { format!("{hz:.0} Hz") }
 }
 
 fn strip(app: &mut App, ui: &mut Ui, b: usize) {
@@ -75,9 +80,7 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
                             if slot.kind == FxKind::Vst {
                                 unload = Some(s);
                             }
-                            slot.kind = kind;
-                            slot.params = kind.defaults();
-                            slot.on = true;
+                            *slot = SlotCfg::new(kind, true);
                             app.focus_bus = b;
                             app.focus_slot = s;
                         }
@@ -105,13 +108,32 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
                             let names = slot.kind.param_names();
                             let defaults = slot.kind.defaults();
                             let col = if slot.on { accent } else { theme::DIM };
+                            // An effect with sliders has five controls in the room of three.
+                            let sliders = slot.kind.slider_names();
+                            let radius = if sliders.is_some() { 8.5 } else { 13.0 };
+                            if sliders.is_some() {
+                                ui.spacing_mut().item_spacing.x = 3.0;
+                            }
+                            let mut touched = false;
                             for k in 0..3 {
-                                let r = knob(ui, &mut slot.params[k], names[k], defaults[k], col);
-                                if r.dragged() || r.clicked() {
-                                    // The hardware encoders follow whichever slot was touched last.
-                                    app.focus_bus = b;
-                                    app.focus_slot = s;
+                                let r = knob_sized(ui, &mut slot.params[k], names[k], defaults[k], col, radius);
+                                touched |= r.dragged() || r.clicked();
+                            }
+                            if let Some(names) = sliders {
+                                let defaults = slot.kind.slider_defaults();
+                                let hz = [crate::fx::eq_low_hz(slot.sliders[0]), crate::fx::eq_high_hz(slot.sliders[1])];
+                                let what = ["Low shelf below", "High shelf above"];
+                                for k in 0..2 {
+                                    let r = fader(ui, &mut slot.sliders[k], names[k], defaults[k], col);
+                                    touched |= r.dragged() || r.clicked();
+                                    let (mid, _) = crate::fx::eq_mid(hz[0], hz[1]);
+                                    r.on_hover_text(format!("{} {}. The mid bell sits at {}.", what[k], hertz(hz[k]), hertz(mid)));
                                 }
+                            }
+                            if touched {
+                                // The hardware encoders follow whichever slot was touched last.
+                                app.focus_bus = b;
+                                app.focus_slot = s;
                             }
                         });
                     } else {

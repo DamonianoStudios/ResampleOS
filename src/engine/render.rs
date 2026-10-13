@@ -26,49 +26,27 @@ impl Engine {
     /// Fires every note that starts inside this block, at its exact sample offset.
     /// `span` is the block length in ticks, `tps` ticks per sample.
     fn sequence(&mut self, span: f64, tps: f64) {
-        // --- Sequencer: collect note-ons that fall inside this block, sample-accurately.
         let mut events = std::mem::take(&mut self.events);
         events.clear();
         if self.playing {
-            let t0 = self.tick;
-            for &pad in &self.seq_pads {
-                let p = &self.pads[pad as usize];
-                let Some(pat) = &p.pattern else { continue };
-                if p.cfg.mute || pat.len_ticks == 0 {
-                    continue;
+            // A block that runs over the end of the loop is sequenced in two parts, with
+            // the change of loop (if one is queued) between them.
+            let (mut t0, mut left, mut done) = (self.tick, span, 0.0);
+            loop {
+                let part = left.min((self.loop_end(t0) - t0).max(0.0));
+                self.collect_notes(t0, part, done, tps, &mut events);
+                t0 += part;
+                left -= part;
+                done += part;
+                if left <= 1e-9 {
+                    break;
                 }
-                let len = pat.len_ticks as f64;
-                if p.cfg.human_time > 0.0 || p.cfg.human_vel > 0.0 {
-                    humanized_notes(pad, pat, &p.cfg, self.swing, t0, span, tps, &mut events);
-                    continue;
-                }
-                let a = t0.rem_euclid(len);
-                let b = a + span;
-                for note in &pat.notes {
-                    let mut w = swing_tick(note.start as f64, self.swing);
-                    if w < a {
-                        w += len;
-                    }
-                    if w >= a && w < b && events.len() < events.capacity() {
-                        events.push(Event {
-                            pad,
-                            vel: note.vel as f32 / 127.0,
-                            semis: note.pitch as f32 - 60.0,
-                            key: 0x8000_0000 | note.pitch as u32,
-                            offset: ((w - a) / tps) as u32,
-                            gate: (note.len as f64 / tps) as i64,
-                        });
-                    }
-                }
+                self.next_scene();
+                t0 = 0.0;
             }
-            if self.metronome {
-                let beat = PPQ as f64;
-                let next = (t0 / beat).ceil() * beat;
-                if next < t0 + span {
-                    self.click_at = ((next - t0) / tps) as i64;
-                    self.click_freq = if (next as u64).is_multiple_of(TICKS_PER_BAR as u64) { 1760.0 } else { 880.0 };
-                }
-            }
+            self.tick = t0;
+            self.song_tick += span;
+            self.shared.tick.store(self.tick.to_bits(), Ordering::Relaxed);
         }
 
         // --- Note repeat for held pads.
@@ -96,12 +74,69 @@ impl Engine {
             self.trigger(*ev, false);
         }
         self.events = events;
-
-        if self.playing {
-            self.tick += span;
-            self.shared.tick.store(self.tick.to_bits(), Ordering::Relaxed);
-        }
         self.free_tick += span;
+    }
+
+    /// Where the stretch of loop starting at `t0` ends: the end of the loop, or the next
+    /// bar line if a loop is queued to come in on the bar.
+    fn loop_end(&self, t0: f64) -> f64 {
+        if self.scene_len == 0 {
+            return f64::INFINITY;
+        }
+        let len = self.scene_len as f64;
+        match &self.queued {
+            Some(q) if q.next_bar => {
+                let bar = TICKS_PER_BAR as f64;
+                (((t0 / bar).floor() + 1.0) * bar).min(len)
+            }
+            _ => len,
+        }
+    }
+
+    /// Collects the notes starting in `[t0, t0 + span)`. `done` is how many ticks of this
+    /// block came before `t0`.
+    fn collect_notes(&mut self, t0: f64, span: f64, done: f64, tps: f64, events: &mut Vec<Event>) {
+        if span <= 0.0 {
+            return;
+        }
+        for &pad in &self.seq_pads {
+            let p = &self.pads[pad as usize];
+            let Some(pat) = &p.pattern else { continue };
+            if p.cfg.mute || pat.len_ticks == 0 {
+                continue;
+            }
+            let len = pat.len_ticks as f64;
+            if p.cfg.human_time > 0.0 || p.cfg.human_vel > 0.0 {
+                humanized_notes(pad, pat, &p.cfg, self.swing, t0, span, done, self.scene_pass, tps, events);
+                continue;
+            }
+            let a = t0.rem_euclid(len);
+            let b = a + span;
+            for note in &pat.notes {
+                let mut w = swing_tick(note.start as f64, self.swing);
+                if w < a {
+                    w += len;
+                }
+                if w >= a && w < b && events.len() < events.capacity() {
+                    events.push(Event {
+                        pad,
+                        vel: note.vel as f32 / 127.0,
+                        semis: note.pitch as f32 - 60.0,
+                        key: 0x8000_0000 | note.pitch as u32,
+                        offset: ((w - a + done) / tps) as u32,
+                        gate: (note.len as f64 / tps) as i64,
+                    });
+                }
+            }
+        }
+        if self.metronome {
+            let beat = PPQ as f64;
+            let next = (t0 / beat).ceil() * beat;
+            if next < t0 + span {
+                self.click_at = ((next - t0 + done) / tps) as i64;
+                self.click_freq = if (next as u64).is_multiple_of(TICKS_PER_BAR as u64) { 1760.0 } else { 880.0 };
+            }
+        }
     }
 
     /// Sample voices and internal synth voices, mixed into their pads' buses.
@@ -114,7 +149,11 @@ impl Engine {
         self.touched.clear();
 
         let sr = self.sr;
-        let time = self.samples_run as f32 / sr;
+        // Synced LFOs follow the transport, and keep running at the tempo when it is stopped.
+        let beat_ticks = if self.playing { self.song_tick } else { self.free_tick };
+        let seconds = self.samples_run as f64 / sr as f64;
+        self.shared.lfo_ticks.store(beat_ticks.to_bits(), Ordering::Relaxed);
+        self.shared.lfo_secs.store(seconds.to_bits(), Ordering::Relaxed);
         let any_solo = self.any_solo;
         let Engine { voices, synths, pads, bufs, scratch, touched, shared, .. } = self;
 
@@ -135,7 +174,7 @@ impl Engine {
             let lfo = if cfg.lfo_target == LfoTarget::Off {
                 0.0
             } else {
-                (time * cfg.lfo_rate * TAU).sin() * cfg.lfo_depth
+                cfg.lfo_shape.at(lfo_phase(cfg, beat_ticks, seconds)) * cfg.lfo_depth
             };
             let audible = !cfg.mute && (!any_solo || cfg.solo);
             let mut vol = if audible { cfg.vol * v.gain } else { 0.0 };
@@ -371,7 +410,7 @@ impl Engine {
                         continue;
                     }
                     if slot.kind != FxKind::Vst {
-                        self.fx[b * 3 + s].process(slot.kind, slot.params, self.bpm, l, r);
+                        self.fx[b * 3 + s].process(slot.kind, slot.params, slot.sliders, self.bpm, l, r);
                         continue;
                     }
                     let Some(rt) = self.fx_plugins[b * 3 + s].as_mut() else { continue };
@@ -505,13 +544,25 @@ fn jitter(pad: u16, note: usize, pass: i64) -> (f32, f32) {
 /// Sequencer path for pads with humanize on. Notes are placed on the absolute timeline so
 /// one that drifts across a loop boundary still fires exactly once.
 #[allow(clippy::too_many_arguments)]
-fn humanized_notes(pad: u16, pat: &Pattern, cfg: &PadCfg, swing: f32, t0: f64, span: f64, tps: f64, events: &mut Vec<Event>) {
+fn humanized_notes(
+    pad: u16,
+    pat: &Pattern,
+    cfg: &PadCfg,
+    swing: f32,
+    t0: f64,
+    span: f64,
+    done: f64,
+    scene_pass: i64,
+    tps: f64,
+    events: &mut Vec<Event>,
+) {
     let len = pat.len_ticks as f64;
     let pass0 = (t0 / len).floor() as i64;
     for (idx, note) in pat.notes.iter().enumerate() {
         let base = swing_tick(note.start as f64, swing);
         for pass in (pass0 - 1).max(0)..=pass0 + 1 {
-            let (jt, jv) = jitter(pad, idx, pass);
+            // Each time round the loop counts as a new pass too.
+            let (jt, jv) = jitter(pad, idx, pass + scene_pass * 4099);
             let at = (pass as f64 * len + base + jt as f64 * cfg.human_time as f64 * HUMAN_TICKS).max(0.0);
             if at >= t0 && at < t0 + span && events.len() < events.capacity() {
                 let vel = note.vel as f32 / 127.0 * (1.0 + jv * cfg.human_vel * 0.5);
@@ -520,7 +571,7 @@ fn humanized_notes(pad: u16, pat: &Pattern, cfg: &PadCfg, swing: f32, t0: f64, s
                     vel: vel.clamp(0.05, 1.0),
                     semis: note.pitch as f32 - 60.0,
                     key: 0x8000_0000 | note.pitch as u32,
-                    offset: ((at - t0) / tps) as u32,
+                    offset: ((at - t0 + done) / tps) as u32,
                     gate: (note.len as f64 / tps) as i64,
                 });
             }

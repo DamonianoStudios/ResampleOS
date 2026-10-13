@@ -48,6 +48,7 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
             }
         });
     });
+    super::scenes::strip(app, ui);
     ui.add_space(2.0);
 
     if let Some(b) = remove {
@@ -62,6 +63,10 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     // Centred in whatever space the zone has.
     let area = Rect::from_center_size(avail.center(), vec2(side, side));
     ui.allocate_rect(avail, Sense::hover());
+    if app.perform {
+        super::scenes::launcher(app, ui, area);
+        return;
+    }
 
     // Ctrl+scroll or pinch over the matrix steps the zoom level.
     if ui.rect_contains_pointer(area) {
