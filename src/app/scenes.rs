@@ -21,11 +21,14 @@ pub struct Scene {
     /// Patterns by pad index, in order. Out of date for the loop on screen, whose
     /// patterns live on the pads until another loop takes its place.
     pub patterns: Vec<(usize, Pattern)>,
+    /// Lanes that move controls through this loop.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub automation: Vec<crate::engine::AutoLane>,
 }
 
 impl Scene {
     pub fn new(bars: u32) -> Scene {
-        Scene { name: String::new(), bars: bars.clamp(1, 16), patterns: Vec::new() }
+        Scene { name: String::new(), bars: bars.clamp(1, 16), patterns: Vec::new(), automation: Vec::new() }
     }
 
     fn pattern(&self, pad: usize) -> Pattern {
@@ -85,6 +88,7 @@ impl App {
         }
         if push {
             self.push_scene_len();
+            self.push_automation();
             // The engine only reports loops it switched to itself.
             self.shared.scene_index.store(to as u32, Ordering::Relaxed);
         }
@@ -123,7 +127,8 @@ impl App {
                 patterns.push((i as u16, then.then(|| Arc::new(next))));
             }
         }
-        let swap = SceneSwap { index: to as u32, len_ticks: self.scene_ticks(to), next_bar: self.launch_on_bar, patterns };
+        let automation = self.automation_of(to);
+        let swap = SceneSwap { index: to as u32, len_ticks: self.scene_ticks(to), next_bar: self.launch_on_bar, patterns, automation };
         self.send(Cmd::QueueScene(Some(Box::new(swap))));
         self.queued_scene = Some(to);
     }

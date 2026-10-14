@@ -84,7 +84,7 @@ impl App {
             || self.scenes.len() != s.scenes.len()
             || self.pads.iter().zip(&s.pads).any(|(a, b)| !a.same_as(b, false))
             || self.scenes.iter().zip(&s.scenes).enumerate().any(|(i, (a, b))| {
-                if a.bars != b.bars || a.name != b.name {
+                if a.bars != b.bars || a.name != b.name || a.automation != b.automation {
                     true
                 } else if i == self.scene {
                     !self.live_patterns().eq(b.patterns.iter().map(|(i, p)| (*i, p)))

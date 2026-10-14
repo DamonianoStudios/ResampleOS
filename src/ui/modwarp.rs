@@ -17,7 +17,7 @@ pub fn draw(app: &mut App, ui: &mut Ui, cfg: &mut PadCfg) {
     let mid = full.width() - side * 2.0 - GAP * 2.0;
     let column = |x: f32, w: f32| Rect::from_min_size(Pos2::new(full.left() + x, full.top()), vec2(w, full.height()));
 
-    section(ui, column(0.0, side), "PITCH · FILTER", theme::AMBER, |ui| pitch_filter(ui, cfg));
+    section(ui, column(0.0, side), "PITCH · FILTER", theme::AMBER, |ui| pitch_filter(app, ui, cfg));
     section(ui, column(side + GAP, mid), "LFO", theme::CYAN, |ui| lfo(app, ui, cfg));
     section(ui, column(side + mid + GAP * 2.0, side), "WARP", theme::PURPLE, |ui| warp(app, ui));
 }
@@ -68,7 +68,7 @@ fn chip(ui: &mut Ui, selected: bool, text: &str, color: Color32) -> Response {
     resp
 }
 
-fn pitch_filter(ui: &mut Ui, cfg: &mut PadCfg) {
+fn pitch_filter(app: &mut App, ui: &mut Ui, cfg: &mut PadCfg) {
     let mut coarse = cfg.pitch.round();
     let mut fine = (cfg.pitch - coarse) * 100.0;
     ui.horizontal(|ui| {
@@ -84,7 +84,8 @@ fn pitch_filter(ui: &mut Ui, cfg: &mut PadCfg) {
     ui.add_space(8.0);
 
     ui.horizontal(|ui| {
-        knob(ui, &mut cfg.cutoff, "Cutoff", 1.0, theme::AMBER);
+        let r = knob(ui, &mut cfg.cutoff, "Cutoff", 1.0, theme::AMBER);
+        super::automation::hook(app, ui, &r, crate::engine::AutoTarget::PadCutoff(app.selected as u16), cfg.cutoff);
         knob(ui, &mut cfg.reso, "Reso", 0.0, theme::AMBER);
     });
     ui.add_space(4.0);

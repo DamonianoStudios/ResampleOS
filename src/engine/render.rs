@@ -29,6 +29,9 @@ impl Engine {
         }
         let tps = (self.bpm as f64 / 60.0) * PPQ as f64 / self.sr as f64;
         self.sequence(n as f64 * tps, tps);
+        if self.playing {
+            self.apply_automation();
+        }
         self.render_voices(n);
         self.render_plugins(n);
         self.pull_input(n);

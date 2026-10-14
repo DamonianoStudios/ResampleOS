@@ -231,6 +231,19 @@ Drag a knob to change it, hold `Shift` for fine control, double-click to reset. 
 
 The SC button is lit purple when ducking and green when swelling.
 
+## Automation
+
+Automation moves a control through a loop: a filter opening over the intro, an echo thrown on the last beat, the master fading at the end. Each loop has its own automation, which switches with the loop on the beat.
+
+These can be automated: every built-in effect knob and EQ slider on the buses, each bus's level and pan, and each pad's volume, pan and filter cutoff.
+
+- **Right-click a control** and choose **Automate**. It gets a lane in the **Automation** tab, starting flat at where the control is set.
+- **Or record it:** in the Automation tab turn on **Rec**, press play, and move the control. The move is written into the loop as the playhead passes; move it again on a later pass to write over it.
+- **Edit a lane** in the Automation tab: click to add a point, drag a point to move it, right-click it to delete it. Points snap to the grid chosen beside **Snap**; hold `Alt` to place them freely. **Flat** takes a lane back to one point; **Remove** stops automating that control in this loop.
+- **Add lane** offers everything that can be automated, without hunting for the control.
+
+Lanes are straight lines between points; before the first point and after the last, the value holds. While the transport runs, automation takes over the control; the control itself shows where you set it by hand, with a small amber dot to say something is moving it. When the transport stops or the loop changes to one that does not automate it, it goes back to where you set it.
+
 ## Drum synth
 
 A **drum synth pad** makes its sound as it plays instead of playing a sample. Turn the knobs while a pattern runs and you hear the change on the next hit; when a sound is right, bake it into an ordinary sample with one key.

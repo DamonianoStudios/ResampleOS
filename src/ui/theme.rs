@@ -128,8 +128,78 @@ fn brushed_metal() -> egui::ColorImage {
     egui::ColorImage::from_gray(METAL_SIZE, &gray)
 }
 
+static KNOB: OnceLock<egui::TextureHandle> = OnceLock::new();
+const KNOB_PX: usize = 256;
+
+/// A knob cap seen from above: a spun-metal face whose fine concentric grooves catch the
+/// light in a cross, a bevelled chamfer lit from the top left, and a dark knurled rim.
+/// The edge is anti-aliased into transparency, so the image can be drawn as a circle.
+fn knob_cap() -> egui::ColorImage {
+    let n = KNOB_PX;
+    // Groove depth by radius: fine random rings, softened a little.
+    let mut seed = 0x51ed_270bu32;
+    let mut rand = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        (seed >> 8) as f32 / (1 << 24) as f32 - 0.5
+    };
+    let raw: Vec<f32> = (0..n).map(|_| rand()).collect();
+    let rings: Vec<f32> = (0..n).map(|i| raw[i] * 0.6 + raw[(i + 1) % n] * 0.2 + raw[(i + n - 1) % n] * 0.2).collect();
+    let light = -3.0 * std::f32::consts::FRAC_PI_4; // from the top left
+    let mut px = Vec::with_capacity(n * n);
+    for y in 0..n {
+        for x in 0..n {
+            let (fx, fy) = ((x as f32 + 0.5) / n as f32 * 2.0 - 1.0, (y as f32 + 0.5) / n as f32 * 2.0 - 1.0);
+            let d = (fx * fx + fy * fy).sqrt();
+            let a = fy.atan2(fx);
+            let lit = (a - light).cos();
+            let (face, chamfer) = (0.80, 0.90);
+            let b = if d < face {
+                let groove = rings[((d / face) * (n as f32 - 1.0)) as usize] * 0.10;
+                // Spun metal reflects in a cross that stays put as the knob turns.
+                let sheen = (2.0 * (a - std::f32::consts::FRAC_PI_4)).cos();
+                0.46 + groove + sheen * 0.13 + lit * 0.05 + (1.0 - d / face) * 0.04
+            } else if d < chamfer {
+                // A bright line where the face turns down into the chamfer.
+                let edge = (1.0 - ((d - face) / 0.012).abs()).max(0.0) * 0.25;
+                0.50 + lit * 0.28 + edge
+            } else {
+                // Knurling: fine ridges round the edge, darker towards the outside.
+                let ridge = if (a * 72.0).sin() > 0.0 { 0.07 } else { -0.05 };
+                let out = (d - chamfer) / (1.0 - chamfer);
+                0.30 + ridge + lit * 0.10 - out * 0.12
+            };
+            let v = (b.clamp(0.0, 1.0) * 255.0) as u8;
+            let alpha = ((1.0 - d) * n as f32 * 0.5).clamp(0.0, 1.0);
+            px.push(Color32::from_rgba_unmultiplied(v, v, (v as f32 * 0.97) as u8, (alpha * 255.0) as u8));
+        }
+    }
+    egui::ColorImage::new([n, n], px)
+}
+
+/// Paints a knob cap of radius `r` centred on `c`, with its shadow.
+pub fn paint_knob_cap(p: &egui::Painter, c: Pos2, r: f32, hot: bool) {
+    p.circle_filled(c + vec2(0.0, 1.5), r + 1.0, Color32::from_black_alpha(150));
+    match KNOB.get() {
+        Some(tex) => {
+            let tint = if hot { Color32::WHITE } else { Color32::from_gray(222) };
+            p.image(tex.id(), Rect::from_center_size(c, vec2(r * 2.0, r * 2.0)), Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), tint);
+        }
+        None => {
+            p.circle_filled(c, r, if hot { HOVER } else { RAISED });
+        }
+    }
+}
+
 pub fn install(ctx: &egui::Context) {
     install_fonts(ctx);
+    KNOB.get_or_init(|| {
+        // Mipmapped: knobs are drawn far smaller than the image, and its grooves would
+        // shimmer without it.
+        let options = egui::TextureOptions { mipmap_mode: Some(egui::TextureFilter::Linear), ..egui::TextureOptions::LINEAR };
+        ctx.load_texture("knob-cap", knob_cap(), options)
+    });
     METAL.get_or_init(|| {
         let options = egui::TextureOptions { wrap_mode: egui::TextureWrapMode::Repeat, ..egui::TextureOptions::LINEAR };
         ctx.load_texture("brushed-metal", brushed_metal(), options)

@@ -412,3 +412,100 @@ pub fn open_dialog(app: &mut App) {
         app.project_dir = Some(dir);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::{Engine, SceneSwap};
+    use crate::shared::{MASTER, Shared};
+    use rtrb::RingBuffer;
+
+    /// Not a pass/fail test: plays a project's chain (or its current loop) through the
+    /// engine offline, prints the level of each loop and writes the result to a WAV, for
+    /// checking a demo without playing it on screen. Pads are played from their patterns;
+    /// sample pads load their WAVs. Hosted plugins are not loaded.
+    /// `RENDER_PROJECT=folder RENDER_OUT=out.wav cargo test --release render_project -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn render_project() {
+        let dir = PathBuf::from(std::env::var("RENDER_PROJECT").expect("set RENDER_PROJECT"));
+        let file: ProjectFile = serde_json::from_str(&std::fs::read_to_string(dir.join("project.json")).unwrap()).unwrap();
+        let sr = 48000u32;
+        let shared = Arc::new(Shared::new(sr, 30));
+        let (mut tx, rx) = RingBuffer::new(8192);
+        let (_tx2, rx2) = RingBuffer::new(8);
+        let (gtx, mut grx) = RingBuffer::new(8192);
+        let mut e = Engine::new(shared.clone(), rx, rx2, gtx);
+        let mut send = |cmd: Cmd| assert!(tx.push(cmd).is_ok(), "command queue full");
+        for (b, cfg) in buses_of(&file).iter().enumerate() {
+            send(Cmd::SetBus { bus: b as u8, cfg: *cfg });
+        }
+        for pf in &file.pads {
+            send(Cmd::SetPadCfg { pad: pf.index as u16, cfg: pf.cfg });
+            if let Some(name) = &pf.sample {
+                let s = sample::load_file(&dir.join("samples").join(name), sr).unwrap();
+                send(Cmd::SetSample { pad: pf.index as u16, sample: Some(Arc::new(s)) });
+            }
+        }
+        send(Cmd::SetBpm(file.bpm));
+        send(Cmd::SetSwing(file.swing));
+        send(Cmd::SetScale(file.key.mask()));
+        let order: Vec<usize> = if file.chain.is_empty() { vec![file.scene] } else { file.chain.clone() };
+        let scenes = &file.scenes;
+        let lanes = |s: usize| (!scenes[s].automation.is_empty()).then(|| Arc::new(scenes[s].automation.clone()));
+        let first = &scenes[order[0]];
+        for (pad, pattern) in &first.patterns {
+            send(Cmd::SetPattern { pad: *pad as u16, pattern: Some(Arc::new(pattern.clone())) });
+        }
+        send(Cmd::SceneLen(first.bars * crate::music::TICKS_PER_BAR));
+        send(Cmd::SetAutomation(lanes(order[0])));
+        send(Cmd::Play(true));
+
+        let mut out = Vec::new();
+        for (k, &s) in order.iter().enumerate() {
+            let frames = (scenes[s].bars as f64 * 4.0 * 60.0 / file.bpm as f64 * sr as f64).round() as usize;
+            let mut block = vec![0f32; frames * 2];
+            let mut bus_peaks = [0f32; crate::shared::NUM_BUSES];
+            let mut sounding = [false; 16];
+            for (c, chunk) in block.chunks_mut(512 * 2).enumerate() {
+                // Like the app, line the next loop up only once this one is under way:
+                // queuing replaces whatever is still waiting.
+                if c == 4 && let Some(&next) = order.get(k + 1) {
+                    // Every pad sequenced in either loop, with what it plays next.
+                    let mut pads: Vec<usize> = scenes[s].patterns.iter().chain(&scenes[next].patterns).map(|(p, _)| *p).collect();
+                    pads.sort_unstable();
+                    pads.dedup();
+                    let patterns = pads
+                        .iter()
+                        .map(|&p| (p as u16, scenes[next].patterns.iter().find(|(q, _)| *q == p).map(|(_, pat)| Arc::new(pat.clone()))))
+                        .collect();
+                    let swap = SceneSwap { index: next as u32, len_ticks: scenes[next].bars * crate::music::TICKS_PER_BAR, next_bar: false, patterns, automation: lanes(next) };
+                    send(Cmd::QueueScene(Some(Box::new(swap))));
+                }
+                e.process(chunk, 2);
+                while grx.pop().is_ok() {}
+                for (i, m) in sounding.iter_mut().enumerate() {
+                    *m |= crate::shared::f32_load(&shared.pad_level[i]) > 0.0;
+                }
+                for (b, m) in bus_peaks.iter_mut().enumerate() {
+                    *m = m.max(crate::shared::f32_load(&shared.bus_peak[b * 2])).max(crate::shared::f32_load(&shared.bus_peak[b * 2 + 1]));
+                }
+            }
+            let db = |v: f32| 20.0 * v.max(1e-6).log10();
+            println!("    pads {:?}", (0..16).filter(|i| sounding[*i]).collect::<Vec<_>>());
+            println!("    buses {}", bus_peaks.iter().map(|v| format!("{:6.1}", db(*v))).collect::<Vec<_>>().join(" "));
+            let peak = block.iter().fold(0f32, |m, v| m.max(v.abs()));
+            let rms = (block.iter().map(|v| v * v).sum::<f32>() / block.len() as f32).sqrt();
+            let name = if scenes[s].name.is_empty() { format!("loop {}", s + 1) } else { scenes[s].name.clone() };
+            println!("{:>2}. {name:12} peak {:6.1} dB  rms {:6.1} dB", k + 1, 20.0 * peak.max(1e-6).log10(), 20.0 * rms.max(1e-6).log10());
+            out.extend(block);
+        }
+        let peak = out.iter().fold(0f32, |m, v| m.max(v.abs()));
+        println!("whole: {:.1} s, peak {:.1} dB, master peak meter {:.2}", out.len() as f32 / 2.0 / sr as f32, 20.0 * peak.max(1e-6).log10(), crate::shared::f32_load(&shared.bus_peak[MASTER * 2]));
+        if let Ok(path) = std::env::var("RENDER_OUT") {
+            let l: Vec<f32> = out.iter().step_by(2).copied().collect();
+            let r: Vec<f32> = out.iter().skip(1).step_by(2).copied().collect();
+            sample::save_wav(Path::new(&path), &sample::SampleData::new(l, r), sr).unwrap();
+        }
+    }
+}

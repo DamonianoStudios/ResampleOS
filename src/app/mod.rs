@@ -1,4 +1,5 @@
 //! Application state and every action the UI, keyboard and controllers can perform.
+mod automation;
 mod capture;
 mod conform;
 mod drum;
@@ -12,6 +13,7 @@ mod scenes;
 mod state;
 mod vocal;
 
+pub use automation::{AUTO_SNAPS, AutoUi};
 pub use drum::{DrumUi, MacroLayer};
 pub use history::History;
 pub use pads::PadAction;
@@ -141,6 +143,7 @@ pub struct App {
 
     pub vocal: VocalUi,
     pub drum: DrumUi,
+    pub auto: AutoUi,
     vocal_work: vocal::VocalWork,
     sent_scale: u16,
     /// Perform mode: the pad matrix launches loops.
@@ -252,6 +255,7 @@ impl App {
             choke_paint: None,
             vocal: VocalUi::default(),
             drum: DrumUi::default(),
+            auto: AutoUi { snap: 3, ..AutoUi::default() },
             vocal_work: Default::default(),
             sent_scale: 0,
             perform: false,
@@ -341,6 +345,7 @@ impl App {
         self.send(Cmd::RingSource(self.ring_src));
         self.send(Cmd::InputCfg { dest: self.input_dest, gain: self.input_gain });
         self.send(Cmd::InputMode(self.prefs.input_mode));
+        self.push_automation();
         self.send(Cmd::Roll { on: self.roll_on, ticks: ROLL_DIVS[self.roll_div].1 });
     }
 

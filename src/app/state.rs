@@ -24,6 +24,7 @@ pub enum Tab {
     Mod,
     Vocal,
     Drum,
+    Auto,
 }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]

@@ -38,15 +38,17 @@ pub fn knob_sized(ui: &mut Ui, value: &mut f32, label: &str, default: f32, color
             .collect();
         p.line(pts, Stroke::new(w, col));
     };
-    arc(0.0, 1.0, theme::WELL, 3.5);
+    arc(0.0, 1.0, theme::WELL, 3.0);
     if *value > 0.004 {
-        arc(0.0, *value, color, 3.5);
+        arc(0.0, *value, color, 3.0);
     }
-    // Cap with a soft top-lit edge, and a pointer dot rather than a line.
-    p.circle_filled(c, r, if hot { theme::HOVER } else { theme::RAISED });
-    p.circle_stroke(c, r, Stroke::new(1.0, theme::mix(theme::RAISED, theme::TEXT, 0.14)));
+    // A spun-metal cap; its pointer is an engraved line in the accent colour.
+    theme::paint_knob_cap(&p, c, r, hot);
     let a = ang(*value);
-    p.circle_filled(c + vec2(a.cos(), a.sin()) * (r - 4.5), 2.2, if hot { theme::TEXT } else { color });
+    let dir = vec2(a.cos(), a.sin());
+    let (from, to) = (c + dir * r * 0.30, c + dir * r * 0.74);
+    p.line_segment([from + vec2(0.0, 0.8), to + vec2(0.0, 0.8)], Stroke::new(2.4, Color32::from_black_alpha(170)));
+    p.line_segment([from, to], Stroke::new(1.8, if hot { theme::TEXT } else { color }));
     // The label may run wider than the knob, into the gap beside it.
     ui.painter().text(
         Pos2::new(rect.center().x, rect.bottom()),

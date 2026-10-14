@@ -1,0 +1,5103 @@
+{
+ "version": 2,
+ "bpm": 88.0,
+ "swing": 0.57,
+ "key": {
+  "root": 9,
+  "scale": "Minor"
+ },
+ "banks": 2,
+ "buses": [
+  {
+   "level": 0.6,
+   "pan": 0.0,
+   "mute": false,
+   "out": 0,
+   "slots": [
+    {
+     "kind": "Comp",
+     "params": [
+      0.45,
+      0.5,
+      0.6
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    },
+    {
+     "kind": "Cassette",
+     "params": [
+      0.35,
+      0.15,
+      0.6
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    },
+    {
+     "kind": "Eq",
+     "params": [
+      0.55,
+      0.45,
+      0.55
+     ],
+     "sliders": [
+      0.6,
+      0.5
+     ],
+     "on": true
+    }
+   ],
+   "sc_src": 0,
+   "sc_amount": -0.7,
+   "sc_release": 0.18
+  },
+  {
+   "level": 0.5,
+   "pan": 0.0,
+   "mute": false,
+   "out": 0,
+   "slots": [
+    {
+     "kind": "Vinyl",
+     "params": [
+      0.4,
+      0.35,
+      0.45
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    },
+    {
+     "kind": "Filter",
+     "params": [
+      0.5,
+      0.25,
+      1.0
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    },
+    {
+     "kind": "Reverb",
+     "params": [
+      0.55,
+      0.5,
+      0.22
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    }
+   ],
+   "sc_src": 0,
+   "sc_amount": -0.7,
+   "sc_release": 0.18
+  },
+  {
+   "level": 0.85,
+   "pan": 0.0,
+   "mute": false,
+   "out": 0,
+   "slots": [
+    {
+     "kind": "Delay",
+     "params": [
+      0.55,
+      0.45,
+      0.22
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    },
+    {
+     "kind": "Reverb",
+     "params": [
+      0.65,
+      0.4,
+      0.25
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    },
+    {
+     "kind": "Eq",
+     "params": [
+      0.4,
+      0.5,
+      0.45
+     ],
+     "sliders": [
+      0.6,
+      0.5
+     ],
+     "on": true
+    }
+   ],
+   "sc_src": 0,
+   "sc_amount": -0.7,
+   "sc_release": 0.18
+  },
+  {
+   "level": 0.75,
+   "pan": 0.0,
+   "mute": false,
+   "out": 0,
+   "slots": [
+    {
+     "kind": "Comp",
+     "params": [
+      0.5,
+      0.55,
+      0.7
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    },
+    {
+     "kind": "Eq",
+     "params": [
+      0.6,
+      0.45,
+      0.4
+     ],
+     "sliders": [
+      0.6,
+      0.5
+     ],
+     "on": true
+    },
+    {
+     "kind": "None",
+     "params": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    }
+   ],
+   "sc_src": 1,
+   "sc_amount": -0.35,
+   "sc_release": 0.15
+  },
+  {
+   "level": 1.0,
+   "pan": 0.0,
+   "mute": false,
+   "out": 0,
+   "slots": [
+    {
+     "kind": "Tune",
+     "params": [
+      0.6,
+      0.5,
+      0.5
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": false
+    },
+    {
+     "kind": "VocalComp",
+     "params": [
+      0.5,
+      0.4,
+      0.15
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    },
+    {
+     "kind": "Throw",
+     "params": [
+      0.0,
+      0.6,
+      0.4
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    }
+   ],
+   "sc_src": 0,
+   "sc_amount": -0.7,
+   "sc_release": 0.18
+  },
+  {
+   "level": 0.9,
+   "pan": 0.0,
+   "mute": false,
+   "out": 0,
+   "slots": [
+    {
+     "kind": "Comp",
+     "params": [
+      0.7,
+      0.3,
+      0.5
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    },
+    {
+     "kind": "None",
+     "params": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    },
+    {
+     "kind": "None",
+     "params": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "sliders": [
+      0.0,
+      0.0
+     ],
+     "on": true
+    }
+   ],
+   "sc_src": 0,
+   "sc_amount": -0.7,
+   "sc_release": 0.18
+  }
+ ],
+ "conform_mode": "Smart",
+ "auto_conform": false,
+ "preserve_transients": true,
+ "pads": [
+  {
+   "index": 0,
+   "name": "Kick",
+   "cfg": {
+    "kind": "Drum",
+    "vol": 0.7,
+    "pan": 0.0,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 1,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.5,
+     "tone": 0.5,
+     "drive": 0.3
+    },
+    "human_time": 0.0,
+    "human_vel": 0.0,
+    "drum": {
+     "engine": "Kick",
+     "m": [
+      0.38,
+      0.45,
+      0.35,
+      0.4,
+      0.25,
+      0.15,
+      0.55,
+      0.4
+     ],
+     "vel": [
+      0,
+      0.3,
+      0,
+      0.5,
+      0,
+      0,
+      0,
+      0
+     ],
+     "rnd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "open": false,
+     "key_lock": false,
+     "sync": 0
+    }
+   },
+   "pattern": {
+    "len_ticks": 3840,
+    "notes": []
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 1,
+   "name": "Snare",
+   "cfg": {
+    "kind": "Drum",
+    "vol": 0.62,
+    "pan": 0.0,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 1,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.5,
+     "tone": 0.5,
+     "drive": 0.3
+    },
+    "human_time": 0.25,
+    "human_vel": 0.2,
+    "drum": {
+     "engine": "Snare",
+     "m": [
+      0.35,
+      0.65,
+      0.5,
+      0.0,
+      0.0,
+      0.6,
+      0.45,
+      0.35
+     ],
+     "vel": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "rnd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "open": false,
+     "key_lock": false,
+     "sync": 0
+    }
+   },
+   "pattern": {
+    "len_ticks": 3840,
+    "notes": []
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 2,
+   "name": "Clap",
+   "cfg": {
+    "kind": "Drum",
+    "vol": 0.4,
+    "pan": 0.1,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 1,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.5,
+     "tone": 0.5,
+     "drive": 0.3
+    },
+    "human_time": 0.0,
+    "human_vel": 0.0,
+    "drum": {
+     "engine": "Snare",
+     "m": [
+      0.4,
+      0.4,
+      0.2,
+      0.75,
+      0.6,
+      0.4,
+      0.45,
+      0.1
+     ],
+     "vel": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "rnd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "open": false,
+     "key_lock": false,
+     "sync": 0
+    }
+   },
+   "pattern": {
+    "len_ticks": 3840,
+    "notes": []
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 3,
+   "name": "Rim",
+   "cfg": {
+    "kind": "Drum",
+    "vol": 0.36,
+    "pan": -0.25,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 1,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.5,
+     "tone": 0.5,
+     "drive": 0.3
+    },
+    "human_time": 0.25,
+    "human_vel": 0.2,
+    "drum": {
+     "engine": "Snare",
+     "m": [
+      0.85,
+      0.1,
+      0.9,
+      0.0,
+      0.0,
+      0.7,
+      0.05,
+      0.4
+     ],
+     "vel": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "rnd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "open": false,
+     "key_lock": false,
+     "sync": 0
+    }
+   },
+   "pattern": {
+    "len_ticks": 3840,
+    "notes": []
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 4,
+   "name": "Closed Hat",
+   "cfg": {
+    "kind": "Drum",
+    "vol": 0.36,
+    "pan": 0.2,
+    "mute": false,
+    "solo": false,
+    "choke": 1,
+    "bus": 1,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.5,
+     "tone": 0.5,
+     "drive": 0.3
+    },
+    "human_time": 0.25,
+    "human_vel": 0.2,
+    "drum": {
+     "engine": "Metal",
+     "m": [
+      0.5,
+      0.5,
+      0.2,
+      0.3,
+      0.45,
+      0.32,
+      0.5,
+      0.25
+     ],
+     "vel": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0.35,
+      0,
+      0
+     ],
+     "rnd": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0.12,
+      0,
+      0.1
+     ],
+     "open": false,
+     "key_lock": false,
+     "sync": 0
+    }
+   },
+   "pattern": {
+    "len_ticks": 1920,
+    "notes": [
+     {
+      "start": 0,
+      "len": 120,
+      "pitch": 60,
+      "vel": 80
+     },
+     {
+      "start": 240,
+      "len": 120,
+      "pitch": 60,
+      "vel": 50
+     },
+     {
+      "start": 480,
+      "len": 120,
+      "pitch": 60,
+      "vel": 70
+     },
+     {
+      "start": 720,
+      "len": 120,
+      "pitch": 60,
+      "vel": 46
+     },
+     {
+      "start": 960,
+      "len": 120,
+      "pitch": 60,
+      "vel": 80
+     },
+     {
+      "start": 1200,
+      "len": 120,
+      "pitch": 60,
+      "vel": 50
+     },
+     {
+      "start": 1440,
+      "len": 120,
+      "pitch": 60,
+      "vel": 70
+     },
+     {
+      "start": 1680,
+      "len": 120,
+      "pitch": 60,
+      "vel": 46
+     }
+    ]
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 5,
+   "name": "Open Hat",
+   "cfg": {
+    "kind": "Drum",
+    "vol": 0.32,
+    "pan": 0.2,
+    "mute": false,
+    "solo": false,
+    "choke": 1,
+    "bus": 1,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.5,
+     "tone": 0.5,
+     "drive": 0.3
+    },
+    "human_time": 0.0,
+    "human_vel": 0.0,
+    "drum": {
+     "engine": "Metal",
+     "m": [
+      0.5,
+      0.5,
+      0.2,
+      0.3,
+      0.45,
+      0.35,
+      0.45,
+      0.25
+     ],
+     "vel": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "rnd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "open": true,
+     "key_lock": false,
+     "sync": 0
+    }
+   },
+   "pattern": {
+    "len_ticks": 3840,
+    "notes": []
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 6,
+   "name": "Shaker",
+   "cfg": {
+    "kind": "Drum",
+    "vol": 0.22,
+    "pan": -0.35,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 1,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.5,
+     "tone": 0.5,
+     "drive": 0.3
+    },
+    "human_time": 0.25,
+    "human_vel": 0.2,
+    "drum": {
+     "engine": "Metal",
+     "m": [
+      0.9,
+      0.9,
+      0.8,
+      0.1,
+      0.7,
+      0.4,
+      0.4,
+      1.0
+     ],
+     "vel": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "rnd": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0.2,
+      0,
+      0.2
+     ],
+     "open": false,
+     "key_lock": false,
+     "sync": 0
+    }
+   },
+   "pattern": {
+    "len_ticks": 3840,
+    "notes": []
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 7,
+   "name": "Conga",
+   "cfg": {
+    "kind": "Drum",
+    "vol": 0.45,
+    "pan": 0.3,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 1,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.5,
+     "tone": 0.5,
+     "drive": 0.3
+    },
+    "human_time": 0.25,
+    "human_vel": 0.2,
+    "drum": {
+     "engine": "Fm",
+     "m": [
+      0.52,
+      0.067,
+      0.2,
+      0.2,
+      0.05,
+      0.0,
+      0.45,
+      0.5
+     ],
+     "vel": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "rnd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "open": false,
+     "key_lock": false,
+     "sync": 0
+    }
+   },
+   "pattern": {
+    "len_ticks": 3840,
+    "notes": []
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 8,
+   "name": "Bass",
+   "cfg": {
+    "kind": "Midi",
+    "vol": 0.7,
+    "pan": 0.0,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 4,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.45,
+     "tone": 0.35,
+     "drive": 0.35
+    },
+    "human_time": 0.0,
+    "human_vel": 0.0
+   },
+   "pattern": {
+    "len_ticks": 3840,
+    "notes": []
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 9,
+   "name": "Keys",
+   "cfg": {
+    "kind": "Midi",
+    "vol": 0.17,
+    "pan": 0.0,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 2,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Keys",
+     "octave": 0,
+     "decay": 0.65,
+     "tone": 0.45,
+     "drive": 0.2
+    },
+    "human_time": 0.25,
+    "human_vel": 0.2
+   },
+   "pattern": {
+    "len_ticks": 7680,
+    "notes": [
+     {
+      "start": 0,
+      "len": 900,
+      "pitch": 57,
+      "vel": 96
+     },
+     {
+      "start": 0,
+      "len": 900,
+      "pitch": 60,
+      "vel": 96
+     },
+     {
+      "start": 0,
+      "len": 900,
+      "pitch": 64,
+      "vel": 96
+     },
+     {
+      "start": 0,
+      "len": 900,
+      "pitch": 67,
+      "vel": 96
+     },
+     {
+      "start": 1200,
+      "len": 340,
+      "pitch": 57,
+      "vel": 74
+     },
+     {
+      "start": 1200,
+      "len": 340,
+      "pitch": 60,
+      "vel": 74
+     },
+     {
+      "start": 1200,
+      "len": 340,
+      "pitch": 64,
+      "vel": 74
+     },
+     {
+      "start": 1200,
+      "len": 340,
+      "pitch": 67,
+      "vel": 74
+     },
+     {
+      "start": 1560,
+      "len": 260,
+      "pitch": 57,
+      "vel": 66
+     },
+     {
+      "start": 1560,
+      "len": 260,
+      "pitch": 60,
+      "vel": 66
+     },
+     {
+      "start": 1560,
+      "len": 260,
+      "pitch": 64,
+      "vel": 66
+     },
+     {
+      "start": 1560,
+      "len": 260,
+      "pitch": 67,
+      "vel": 66
+     },
+     {
+      "start": 1920,
+      "len": 900,
+      "pitch": 57,
+      "vel": 96
+     },
+     {
+      "start": 1920,
+      "len": 900,
+      "pitch": 60,
+      "vel": 96
+     },
+     {
+      "start": 1920,
+      "len": 900,
+      "pitch": 64,
+      "vel": 96
+     },
+     {
+      "start": 1920,
+      "len": 900,
+      "pitch": 65,
+      "vel": 96
+     },
+     {
+      "start": 3120,
+      "len": 340,
+      "pitch": 57,
+      "vel": 74
+     },
+     {
+      "start": 3120,
+      "len": 340,
+      "pitch": 60,
+      "vel": 74
+     },
+     {
+      "start": 3120,
+      "len": 340,
+      "pitch": 64,
+      "vel": 74
+     },
+     {
+      "start": 3120,
+      "len": 340,
+      "pitch": 65,
+      "vel": 74
+     },
+     {
+      "start": 3480,
+      "len": 260,
+      "pitch": 57,
+      "vel": 66
+     },
+     {
+      "start": 3480,
+      "len": 260,
+      "pitch": 60,
+      "vel": 66
+     },
+     {
+      "start": 3480,
+      "len": 260,
+      "pitch": 64,
+      "vel": 66
+     },
+     {
+      "start": 3480,
+      "len": 260,
+      "pitch": 65,
+      "vel": 66
+     },
+     {
+      "start": 3840,
+      "len": 900,
+      "pitch": 57,
+      "vel": 96
+     },
+     {
+      "start": 3840,
+      "len": 900,
+      "pitch": 60,
+      "vel": 96
+     },
+     {
+      "start": 3840,
+      "len": 900,
+      "pitch": 62,
+      "vel": 96
+     },
+     {
+      "start": 3840,
+      "len": 900,
+      "pitch": 65,
+      "vel": 96
+     },
+     {
+      "start": 5040,
+      "len": 340,
+      "pitch": 57,
+      "vel": 74
+     },
+     {
+      "start": 5040,
+      "len": 340,
+      "pitch": 60,
+      "vel": 74
+     },
+     {
+      "start": 5040,
+      "len": 340,
+      "pitch": 62,
+      "vel": 74
+     },
+     {
+      "start": 5040,
+      "len": 340,
+      "pitch": 65,
+      "vel": 74
+     },
+     {
+      "start": 5400,
+      "len": 260,
+      "pitch": 57,
+      "vel": 66
+     },
+     {
+      "start": 5400,
+      "len": 260,
+      "pitch": 60,
+      "vel": 66
+     },
+     {
+      "start": 5400,
+      "len": 260,
+      "pitch": 62,
+      "vel": 66
+     },
+     {
+      "start": 5400,
+      "len": 260,
+      "pitch": 65,
+      "vel": 66
+     },
+     {
+      "start": 5760,
+      "len": 900,
+      "pitch": 55,
+      "vel": 96
+     },
+     {
+      "start": 5760,
+      "len": 900,
+      "pitch": 59,
+      "vel": 96
+     },
+     {
+      "start": 5760,
+      "len": 900,
+      "pitch": 62,
+      "vel": 96
+     },
+     {
+      "start": 5760,
+      "len": 900,
+      "pitch": 64,
+      "vel": 96
+     },
+     {
+      "start": 6960,
+      "len": 340,
+      "pitch": 55,
+      "vel": 74
+     },
+     {
+      "start": 6960,
+      "len": 340,
+      "pitch": 59,
+      "vel": 74
+     },
+     {
+      "start": 6960,
+      "len": 340,
+      "pitch": 62,
+      "vel": 74
+     },
+     {
+      "start": 6960,
+      "len": 340,
+      "pitch": 64,
+      "vel": 74
+     },
+     {
+      "start": 7320,
+      "len": 260,
+      "pitch": 55,
+      "vel": 66
+     },
+     {
+      "start": 7320,
+      "len": 260,
+      "pitch": 59,
+      "vel": 66
+     },
+     {
+      "start": 7320,
+      "len": 260,
+      "pitch": 62,
+      "vel": 66
+     },
+     {
+      "start": 7320,
+      "len": 260,
+      "pitch": 64,
+      "vel": 66
+     }
+    ]
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 10,
+   "name": "Lead",
+   "cfg": {
+    "kind": "Midi",
+    "vol": 0.45,
+    "pan": -0.1,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 3,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Square",
+     "octave": 0,
+     "decay": 0.35,
+     "tone": 0.55,
+     "drive": 0.15
+    },
+    "human_time": 0.0,
+    "human_vel": 0.0
+   },
+   "pattern": {
+    "len_ticks": 3840,
+    "notes": []
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 11,
+   "name": "Pad",
+   "cfg": {
+    "kind": "Midi",
+    "vol": 0.08,
+    "pan": 0.0,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 2,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.25,
+    "release": 0.6,
+    "reverse": false,
+    "cutoff": 0.55,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Saw",
+     "octave": 0,
+     "decay": 0.8,
+     "tone": 0.3,
+     "drive": 0.1
+    },
+    "human_time": 0.0,
+    "human_vel": 0.0
+   },
+   "pattern": {
+    "len_ticks": 7680,
+    "notes": [
+     {
+      "start": 0,
+      "len": 1860,
+      "pitch": 45,
+      "vel": 70
+     },
+     {
+      "start": 0,
+      "len": 1860,
+      "pitch": 52,
+      "vel": 70
+     },
+     {
+      "start": 1920,
+      "len": 1860,
+      "pitch": 45,
+      "vel": 70
+     },
+     {
+      "start": 1920,
+      "len": 1860,
+      "pitch": 52,
+      "vel": 70
+     },
+     {
+      "start": 3840,
+      "len": 1860,
+      "pitch": 45,
+      "vel": 70
+     },
+     {
+      "start": 3840,
+      "len": 1860,
+      "pitch": 50,
+      "vel": 70
+     },
+     {
+      "start": 5760,
+      "len": 1860,
+      "pitch": 43,
+      "vel": 70
+     },
+     {
+      "start": 5760,
+      "len": 1860,
+      "pitch": 50,
+      "vel": 70
+     }
+    ]
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 12,
+   "name": "808 Boom",
+   "cfg": {
+    "kind": "Drum",
+    "vol": 0.6,
+    "pan": 0.0,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 1,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.5,
+     "tone": 0.5,
+     "drive": 0.3
+    },
+    "human_time": 0.0,
+    "human_vel": 0.0,
+    "drum": {
+     "engine": "Kick",
+     "m": [
+      0.28,
+      0.3,
+      0.5,
+      0.05,
+      0.15,
+      0.45,
+      0.9,
+      0.35
+     ],
+     "vel": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "rnd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "open": false,
+     "key_lock": true,
+     "sync": 0
+    }
+   },
+   "pattern": {
+    "len_ticks": 3840,
+    "notes": []
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 13,
+   "name": "Laser",
+   "cfg": {
+    "kind": "Drum",
+    "vol": 0.3,
+    "pan": 0.0,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 3,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.5,
+     "tone": 0.5,
+     "drive": 0.3
+    },
+    "human_time": 0.0,
+    "human_vel": 0.0,
+    "drum": {
+     "engine": "Fm",
+     "m": [
+      0.6,
+      0.0,
+      0.9,
+      0.55,
+      0.3,
+      0.4,
+      0.4,
+      0.2
+     ],
+     "vel": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "rnd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "open": false,
+     "key_lock": false,
+     "sync": 0
+    }
+   },
+   "pattern": {
+    "len_ticks": 7680,
+    "notes": [
+     {
+      "start": 7440,
+      "len": 120,
+      "pitch": 60,
+      "vel": 96
+     }
+    ]
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 14,
+   "name": "Ride",
+   "cfg": {
+    "kind": "Drum",
+    "vol": 0.25,
+    "pan": 0.3,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 1,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.5,
+     "tone": 0.5,
+     "drive": 0.3
+    },
+    "human_time": 0.0,
+    "human_vel": 0.0,
+    "drum": {
+     "engine": "Metal",
+     "m": [
+      0.35,
+      0.8,
+      0.5,
+      0.6,
+      0.35,
+      0.5,
+      0.85,
+      0.5
+     ],
+     "vel": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "rnd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "open": true,
+     "key_lock": false,
+     "sync": 0
+    }
+   },
+   "pattern": {
+    "len_ticks": 3840,
+    "notes": []
+   },
+   "transients": [],
+   "sample": null
+  },
+  {
+   "index": 15,
+   "name": "Tom",
+   "cfg": {
+    "kind": "Drum",
+    "vol": 0.5,
+    "pan": 0.0,
+    "mute": false,
+    "solo": false,
+    "choke": 0,
+    "bus": 1,
+    "pitch": 0.0,
+    "mode": "OneShot",
+    "start": 0,
+    "end": 0,
+    "attack": 0.0,
+    "release": 0.02,
+    "reverse": false,
+    "cutoff": 1.0,
+    "reso": 0.0,
+    "lfo_rate": 2.0,
+    "lfo_depth": 0.0,
+    "lfo_target": "Off",
+    "lfo_shape": "Sine",
+    "lfo_sync": 0,
+    "target": "Synth",
+    "synth": {
+     "engine": "Sub808",
+     "octave": -2,
+     "decay": 0.5,
+     "tone": 0.5,
+     "drive": 0.3
+    },
+    "human_time": 0.0,
+    "human_vel": 0.0,
+    "drum": {
+     "engine": "Fm",
+     "m": [
+      0.185,
+      0.067,
+      0.15,
+      0.3,
+      0.0,
+      0.0,
+      0.5,
+      0.3
+     ],
+     "vel": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "rnd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "open": false,
+     "key_lock": false,
+     "sync": 0
+    }
+   },
+   "pattern": {
+    "len_ticks": 3840,
+    "notes": []
+   },
+   "transients": [],
+   "sample": null
+  }
+ ],
+ "fx_plugins": [],
+ "scenes": [
+  {
+   "name": "Intro",
+   "bars": 4,
+   "patterns": [
+    [
+     9,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 67,
+        "vel": 96
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 67,
+        "vel": 74
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 67,
+        "vel": 66
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 65,
+        "vel": 96
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 65,
+        "vel": 74
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 65,
+        "vel": 66
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 62,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 65,
+        "vel": 96
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 62,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 65,
+        "vel": 74
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 62,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 65,
+        "vel": 66
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 55,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 59,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 62,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 55,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 59,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 62,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 55,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 59,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 62,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       }
+      ]
+     }
+    ],
+    [
+     11,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 0,
+        "len": 1860,
+        "pitch": 52,
+        "vel": 70
+       },
+       {
+        "start": 1920,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 1920,
+        "len": 1860,
+        "pitch": 52,
+        "vel": 70
+       },
+       {
+        "start": 3840,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 3840,
+        "len": 1860,
+        "pitch": 50,
+        "vel": 70
+       },
+       {
+        "start": 5760,
+        "len": 1860,
+        "pitch": 43,
+        "vel": 70
+       },
+       {
+        "start": 5760,
+        "len": 1860,
+        "pitch": 50,
+        "vel": 70
+       }
+      ]
+     }
+    ],
+    [
+     4,
+     {
+      "len_ticks": 1920,
+      "notes": [
+       {
+        "start": 0,
+        "len": 120,
+        "pitch": 60,
+        "vel": 80
+       },
+       {
+        "start": 240,
+        "len": 120,
+        "pitch": 60,
+        "vel": 50
+       },
+       {
+        "start": 480,
+        "len": 120,
+        "pitch": 60,
+        "vel": 70
+       },
+       {
+        "start": 720,
+        "len": 120,
+        "pitch": 60,
+        "vel": 46
+       },
+       {
+        "start": 960,
+        "len": 120,
+        "pitch": 60,
+        "vel": 80
+       },
+       {
+        "start": 1200,
+        "len": 120,
+        "pitch": 60,
+        "vel": 50
+       },
+       {
+        "start": 1440,
+        "len": 120,
+        "pitch": 60,
+        "vel": 70
+       },
+       {
+        "start": 1680,
+        "len": 120,
+        "pitch": 60,
+        "vel": 46
+       }
+      ]
+     }
+    ],
+    [
+     13,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 7440,
+        "len": 120,
+        "pitch": 60,
+        "vel": 96
+       }
+      ]
+     }
+    ]
+   ],
+   "automation": [
+    {
+     "target": {
+      "BusParam": {
+       "bus": 1,
+       "slot": 1,
+       "param": 0
+      }
+     },
+     "points": [
+      {
+       "tick": 0,
+       "value": 0.16
+      },
+      {
+       "tick": 5760,
+       "value": 0.42
+      },
+      {
+       "tick": 7560,
+       "value": 0.5
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Verse A",
+   "bars": 8,
+   "patterns": [
+    [
+     0,
+     {
+      "len_ticks": 3840,
+      "notes": [
+       {
+        "start": 0,
+        "len": 120,
+        "pitch": 60,
+        "vel": 118
+       },
+       {
+        "start": 360,
+        "len": 120,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 960,
+        "len": 120,
+        "pitch": 60,
+        "vel": 112
+       },
+       {
+        "start": 1200,
+        "len": 120,
+        "pitch": 60,
+        "vel": 100
+       },
+       {
+        "start": 1920,
+        "len": 120,
+        "pitch": 60,
+        "vel": 118
+       },
+       {
+        "start": 2280,
+        "len": 120,
+        "pitch": 60,
+        "vel": 92
+       },
+       {
+        "start": 2880,
+        "len": 120,
+        "pitch": 60,
+        "vel": 110
+       },
+       {
+        "start": 3120,
+        "len": 120,
+        "pitch": 60,
+        "vel": 98
+       },
+       {
+        "start": 3600,
+        "len": 120,
+        "pitch": 60,
+        "vel": 84
+       }
+      ]
+     }
+    ],
+    [
+     1,
+     {
+      "len_ticks": 3840,
+      "notes": [
+       {
+        "start": 480,
+        "len": 120,
+        "pitch": 60,
+        "vel": 112
+       },
+       {
+        "start": 1440,
+        "len": 120,
+        "pitch": 60,
+        "vel": 112
+       },
+       {
+        "start": 2400,
+        "len": 120,
+        "pitch": 60,
+        "vel": 112
+       },
+       {
+        "start": 3360,
+        "len": 120,
+        "pitch": 60,
+        "vel": 112
+       },
+       {
+        "start": 3720,
+        "len": 120,
+        "pitch": 60,
+        "vel": 46
+       }
+      ]
+     }
+    ],
+    [
+     4,
+     {
+      "len_ticks": 3840,
+      "notes": [
+       {
+        "start": 0,
+        "len": 120,
+        "pitch": 60,
+        "vel": 104
+       },
+       {
+        "start": 240,
+        "len": 120,
+        "pitch": 60,
+        "vel": 62
+       },
+       {
+        "start": 480,
+        "len": 120,
+        "pitch": 60,
+        "vel": 90
+       },
+       {
+        "start": 720,
+        "len": 120,
+        "pitch": 60,
+        "vel": 58
+       },
+       {
+        "start": 840,
+        "len": 120,
+        "pitch": 60,
+        "vel": 44
+       },
+       {
+        "start": 960,
+        "len": 120,
+        "pitch": 60,
+        "vel": 100
+       },
+       {
+        "start": 1200,
+        "len": 120,
+        "pitch": 60,
+        "vel": 62
+       },
+       {
+        "start": 1440,
+        "len": 120,
+        "pitch": 60,
+        "vel": 88
+       },
+       {
+        "start": 1680,
+        "len": 120,
+        "pitch": 60,
+        "vel": 58
+       },
+       {
+        "start": 1920,
+        "len": 120,
+        "pitch": 60,
+        "vel": 104
+       },
+       {
+        "start": 2160,
+        "len": 120,
+        "pitch": 60,
+        "vel": 62
+       },
+       {
+        "start": 2400,
+        "len": 120,
+        "pitch": 60,
+        "vel": 90
+       },
+       {
+        "start": 2640,
+        "len": 120,
+        "pitch": 60,
+        "vel": 58
+       },
+       {
+        "start": 2880,
+        "len": 120,
+        "pitch": 60,
+        "vel": 100
+       },
+       {
+        "start": 3120,
+        "len": 120,
+        "pitch": 60,
+        "vel": 62
+       },
+       {
+        "start": 3360,
+        "len": 120,
+        "pitch": 60,
+        "vel": 88
+       }
+      ]
+     }
+    ],
+    [
+     5,
+     {
+      "len_ticks": 3840,
+      "notes": [
+       {
+        "start": 3600,
+        "len": 120,
+        "pitch": 60,
+        "vel": 92
+       }
+      ]
+     }
+    ],
+    [
+     8,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 600,
+        "pitch": 57,
+        "vel": 112
+       },
+       {
+        "start": 720,
+        "len": 200,
+        "pitch": 57,
+        "vel": 88
+       },
+       {
+        "start": 1200,
+        "len": 420,
+        "pitch": 57,
+        "vel": 100
+       },
+       {
+        "start": 1680,
+        "len": 200,
+        "pitch": 57,
+        "vel": 80
+       },
+       {
+        "start": 1920,
+        "len": 600,
+        "pitch": 53,
+        "vel": 112
+       },
+       {
+        "start": 2640,
+        "len": 200,
+        "pitch": 53,
+        "vel": 88
+       },
+       {
+        "start": 3120,
+        "len": 420,
+        "pitch": 65,
+        "vel": 100
+       },
+       {
+        "start": 3600,
+        "len": 200,
+        "pitch": 53,
+        "vel": 80
+       },
+       {
+        "start": 3840,
+        "len": 600,
+        "pitch": 62,
+        "vel": 112
+       },
+       {
+        "start": 4560,
+        "len": 200,
+        "pitch": 62,
+        "vel": 88
+       },
+       {
+        "start": 5040,
+        "len": 420,
+        "pitch": 62,
+        "vel": 100
+       },
+       {
+        "start": 5520,
+        "len": 200,
+        "pitch": 62,
+        "vel": 80
+       },
+       {
+        "start": 5760,
+        "len": 600,
+        "pitch": 64,
+        "vel": 112
+       },
+       {
+        "start": 6480,
+        "len": 200,
+        "pitch": 64,
+        "vel": 88
+       },
+       {
+        "start": 6960,
+        "len": 420,
+        "pitch": 76,
+        "vel": 100
+       },
+       {
+        "start": 7440,
+        "len": 200,
+        "pitch": 64,
+        "vel": 80
+       }
+      ]
+     }
+    ],
+    [
+     9,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 67,
+        "vel": 96
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 67,
+        "vel": 74
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 67,
+        "vel": 66
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 65,
+        "vel": 96
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 65,
+        "vel": 74
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 65,
+        "vel": 66
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 62,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 65,
+        "vel": 96
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 62,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 65,
+        "vel": 74
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 62,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 65,
+        "vel": 66
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 55,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 59,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 62,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 55,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 59,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 62,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 55,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 59,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 62,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       }
+      ]
+     }
+    ],
+    [
+     11,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 0,
+        "len": 1860,
+        "pitch": 52,
+        "vel": 70
+       },
+       {
+        "start": 1920,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 1920,
+        "len": 1860,
+        "pitch": 52,
+        "vel": 70
+       },
+       {
+        "start": 3840,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 3840,
+        "len": 1860,
+        "pitch": 50,
+        "vel": 70
+       },
+       {
+        "start": 5760,
+        "len": 1860,
+        "pitch": 43,
+        "vel": 70
+       },
+       {
+        "start": 5760,
+        "len": 1860,
+        "pitch": 50,
+        "vel": 70
+       }
+      ]
+     }
+    ],
+    [
+     14,
+     {
+      "len_ticks": 15360,
+      "notes": [
+       {
+        "start": 0,
+        "len": 120,
+        "pitch": 60,
+        "vel": 100
+       }
+      ]
+     }
+    ],
+    [
+     15,
+     {
+      "len_ticks": 15360,
+      "notes": [
+       {
+        "start": 14880,
+        "len": 120,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 15000,
+        "len": 120,
+        "pitch": 62,
+        "vel": 92
+       },
+       {
+        "start": 15120,
+        "len": 120,
+        "pitch": 60,
+        "vel": 100
+       },
+       {
+        "start": 15240,
+        "len": 120,
+        "pitch": 57,
+        "vel": 108
+       }
+      ]
+     }
+    ]
+   ],
+   "automation": []
+  },
+  {
+   "name": "Verse B",
+   "bars": 8,
+   "patterns": [
+    [
+     0,
+     {
+      "len_ticks": 3840,
+      "notes": [
+       {
+        "start": 0,
+        "len": 120,
+        "pitch": 60,
+        "vel": 118
+       },
+       {
+        "start": 360,
+        "len": 120,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 960,
+        "len": 120,
+        "pitch": 60,
+        "vel": 112
+       },
+       {
+        "start": 1200,
+        "len": 120,
+        "pitch": 60,
+        "vel": 100
+       },
+       {
+        "start": 1920,
+        "len": 120,
+        "pitch": 60,
+        "vel": 118
+       },
+       {
+        "start": 2280,
+        "len": 120,
+        "pitch": 60,
+        "vel": 92
+       },
+       {
+        "start": 2880,
+        "len": 120,
+        "pitch": 60,
+        "vel": 110
+       },
+       {
+        "start": 3120,
+        "len": 120,
+        "pitch": 60,
+        "vel": 98
+       },
+       {
+        "start": 3600,
+        "len": 120,
+        "pitch": 60,
+        "vel": 84
+       }
+      ]
+     }
+    ],
+    [
+     1,
+     {
+      "len_ticks": 3840,
+      "notes": [
+       {
+        "start": 480,
+        "len": 120,
+        "pitch": 60,
+        "vel": 112
+       },
+       {
+        "start": 1440,
+        "len": 120,
+        "pitch": 60,
+        "vel": 112
+       },
+       {
+        "start": 2400,
+        "len": 120,
+        "pitch": 60,
+        "vel": 112
+       },
+       {
+        "start": 3360,
+        "len": 120,
+        "pitch": 60,
+        "vel": 112
+       },
+       {
+        "start": 3720,
+        "len": 120,
+        "pitch": 60,
+        "vel": 46
+       }
+      ]
+     }
+    ],
+    [
+     4,
+     {
+      "len_ticks": 3840,
+      "notes": [
+       {
+        "start": 0,
+        "len": 120,
+        "pitch": 60,
+        "vel": 104
+       },
+       {
+        "start": 240,
+        "len": 120,
+        "pitch": 60,
+        "vel": 62
+       },
+       {
+        "start": 480,
+        "len": 120,
+        "pitch": 60,
+        "vel": 90
+       },
+       {
+        "start": 720,
+        "len": 120,
+        "pitch": 60,
+        "vel": 58
+       },
+       {
+        "start": 840,
+        "len": 120,
+        "pitch": 60,
+        "vel": 44
+       },
+       {
+        "start": 960,
+        "len": 120,
+        "pitch": 60,
+        "vel": 100
+       },
+       {
+        "start": 1200,
+        "len": 120,
+        "pitch": 60,
+        "vel": 62
+       },
+       {
+        "start": 1440,
+        "len": 120,
+        "pitch": 60,
+        "vel": 88
+       },
+       {
+        "start": 1680,
+        "len": 120,
+        "pitch": 60,
+        "vel": 58
+       },
+       {
+        "start": 1920,
+        "len": 120,
+        "pitch": 60,
+        "vel": 104
+       },
+       {
+        "start": 2160,
+        "len": 120,
+        "pitch": 60,
+        "vel": 62
+       },
+       {
+        "start": 2400,
+        "len": 120,
+        "pitch": 60,
+        "vel": 90
+       },
+       {
+        "start": 2640,
+        "len": 120,
+        "pitch": 60,
+        "vel": 58
+       },
+       {
+        "start": 2880,
+        "len": 120,
+        "pitch": 60,
+        "vel": 100
+       },
+       {
+        "start": 3120,
+        "len": 120,
+        "pitch": 60,
+        "vel": 62
+       },
+       {
+        "start": 3360,
+        "len": 120,
+        "pitch": 60,
+        "vel": 88
+       }
+      ]
+     }
+    ],
+    [
+     5,
+     {
+      "len_ticks": 3840,
+      "notes": [
+       {
+        "start": 3600,
+        "len": 120,
+        "pitch": 60,
+        "vel": 92
+       }
+      ]
+     }
+    ],
+    [
+     8,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 600,
+        "pitch": 57,
+        "vel": 112
+       },
+       {
+        "start": 720,
+        "len": 200,
+        "pitch": 57,
+        "vel": 88
+       },
+       {
+        "start": 1200,
+        "len": 420,
+        "pitch": 57,
+        "vel": 100
+       },
+       {
+        "start": 1680,
+        "len": 200,
+        "pitch": 57,
+        "vel": 80
+       },
+       {
+        "start": 1920,
+        "len": 600,
+        "pitch": 53,
+        "vel": 112
+       },
+       {
+        "start": 2640,
+        "len": 200,
+        "pitch": 53,
+        "vel": 88
+       },
+       {
+        "start": 3120,
+        "len": 420,
+        "pitch": 65,
+        "vel": 100
+       },
+       {
+        "start": 3600,
+        "len": 200,
+        "pitch": 53,
+        "vel": 80
+       },
+       {
+        "start": 3840,
+        "len": 600,
+        "pitch": 62,
+        "vel": 112
+       },
+       {
+        "start": 4560,
+        "len": 200,
+        "pitch": 62,
+        "vel": 88
+       },
+       {
+        "start": 5040,
+        "len": 420,
+        "pitch": 62,
+        "vel": 100
+       },
+       {
+        "start": 5520,
+        "len": 200,
+        "pitch": 62,
+        "vel": 80
+       },
+       {
+        "start": 5760,
+        "len": 600,
+        "pitch": 64,
+        "vel": 112
+       },
+       {
+        "start": 6480,
+        "len": 200,
+        "pitch": 64,
+        "vel": 88
+       },
+       {
+        "start": 6960,
+        "len": 420,
+        "pitch": 76,
+        "vel": 100
+       },
+       {
+        "start": 7440,
+        "len": 200,
+        "pitch": 64,
+        "vel": 80
+       }
+      ]
+     }
+    ],
+    [
+     9,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 67,
+        "vel": 96
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 67,
+        "vel": 74
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 67,
+        "vel": 66
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 65,
+        "vel": 96
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 65,
+        "vel": 74
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 65,
+        "vel": 66
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 62,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 65,
+        "vel": 96
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 62,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 65,
+        "vel": 74
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 62,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 65,
+        "vel": 66
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 55,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 59,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 62,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 55,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 59,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 62,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 55,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 59,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 62,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       }
+      ]
+     }
+    ],
+    [
+     11,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 0,
+        "len": 1860,
+        "pitch": 52,
+        "vel": 70
+       },
+       {
+        "start": 1920,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 1920,
+        "len": 1860,
+        "pitch": 52,
+        "vel": 70
+       },
+       {
+        "start": 3840,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 3840,
+        "len": 1860,
+        "pitch": 50,
+        "vel": 70
+       },
+       {
+        "start": 5760,
+        "len": 1860,
+        "pitch": 43,
+        "vel": 70
+       },
+       {
+        "start": 5760,
+        "len": 1860,
+        "pitch": 50,
+        "vel": 70
+       }
+      ]
+     }
+    ],
+    [
+     10,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 240,
+        "pitch": 76,
+        "vel": 96
+       },
+       {
+        "start": 360,
+        "len": 120,
+        "pitch": 74,
+        "vel": 96
+       },
+       {
+        "start": 480,
+        "len": 240,
+        "pitch": 72,
+        "vel": 96
+       },
+       {
+        "start": 960,
+        "len": 480,
+        "pitch": 69,
+        "vel": 96
+       },
+       {
+        "start": 3120,
+        "len": 240,
+        "pitch": 67,
+        "vel": 96
+       },
+       {
+        "start": 3360,
+        "len": 480,
+        "pitch": 69,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 240,
+        "pitch": 72,
+        "vel": 96
+       },
+       {
+        "start": 4080,
+        "len": 240,
+        "pitch": 74,
+        "vel": 96
+       },
+       {
+        "start": 4320,
+        "len": 480,
+        "pitch": 76,
+        "vel": 96
+       },
+       {
+        "start": 4800,
+        "len": 240,
+        "pitch": 79,
+        "vel": 96
+       },
+       {
+        "start": 5040,
+        "len": 480,
+        "pitch": 76,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 360,
+        "pitch": 74,
+        "vel": 96
+       },
+       {
+        "start": 6120,
+        "len": 240,
+        "pitch": 72,
+        "vel": 96
+       },
+       {
+        "start": 6480,
+        "len": 960,
+        "pitch": 69,
+        "vel": 96
+       }
+      ]
+     }
+    ],
+    [
+     2,
+     {
+      "len_ticks": 3840,
+      "notes": [
+       {
+        "start": 480,
+        "len": 120,
+        "pitch": 60,
+        "vel": 88
+       },
+       {
+        "start": 1440,
+        "len": 120,
+        "pitch": 60,
+        "vel": 88
+       },
+       {
+        "start": 2400,
+        "len": 120,
+        "pitch": 60,
+        "vel": 88
+       },
+       {
+        "start": 3360,
+        "len": 120,
+        "pitch": 60,
+        "vel": 88
+       }
+      ]
+     }
+    ],
+    [
+     3,
+     {
+      "len_ticks": 3840,
+      "notes": [
+       {
+        "start": 720,
+        "len": 120,
+        "pitch": 60,
+        "vel": 72
+       },
+       {
+        "start": 1560,
+        "len": 120,
+        "pitch": 60,
+        "vel": 60
+       },
+       {
+        "start": 2760,
+        "len": 120,
+        "pitch": 60,
+        "vel": 64
+       },
+       {
+        "start": 3480,
+        "len": 120,
+        "pitch": 60,
+        "vel": 70
+       }
+      ]
+     }
+    ],
+    [
+     6,
+     {
+      "len_ticks": 1920,
+      "notes": [
+       {
+        "start": 0,
+        "len": 120,
+        "pitch": 60,
+        "vel": 60
+       },
+       {
+        "start": 120,
+        "len": 120,
+        "pitch": 60,
+        "vel": 38
+       },
+       {
+        "start": 240,
+        "len": 120,
+        "pitch": 60,
+        "vel": 50
+       },
+       {
+        "start": 360,
+        "len": 120,
+        "pitch": 60,
+        "vel": 36
+       },
+       {
+        "start": 480,
+        "len": 120,
+        "pitch": 60,
+        "vel": 60
+       },
+       {
+        "start": 600,
+        "len": 120,
+        "pitch": 60,
+        "vel": 38
+       },
+       {
+        "start": 720,
+        "len": 120,
+        "pitch": 60,
+        "vel": 50
+       },
+       {
+        "start": 840,
+        "len": 120,
+        "pitch": 60,
+        "vel": 36
+       },
+       {
+        "start": 960,
+        "len": 120,
+        "pitch": 60,
+        "vel": 60
+       },
+       {
+        "start": 1080,
+        "len": 120,
+        "pitch": 60,
+        "vel": 38
+       },
+       {
+        "start": 1200,
+        "len": 120,
+        "pitch": 60,
+        "vel": 50
+       },
+       {
+        "start": 1320,
+        "len": 120,
+        "pitch": 60,
+        "vel": 36
+       },
+       {
+        "start": 1440,
+        "len": 120,
+        "pitch": 60,
+        "vel": 60
+       },
+       {
+        "start": 1560,
+        "len": 120,
+        "pitch": 60,
+        "vel": 38
+       },
+       {
+        "start": 1680,
+        "len": 120,
+        "pitch": 60,
+        "vel": 50
+       },
+       {
+        "start": 1800,
+        "len": 120,
+        "pitch": 60,
+        "vel": 36
+       }
+      ]
+     }
+    ],
+    [
+     14,
+     {
+      "len_ticks": 15360,
+      "notes": [
+       {
+        "start": 0,
+        "len": 120,
+        "pitch": 60,
+        "vel": 100
+       }
+      ]
+     }
+    ]
+   ],
+   "automation": [
+    {
+     "target": {
+      "BusParam": {
+       "bus": 2,
+       "slot": 0,
+       "param": 2
+      }
+     },
+     "points": [
+      {
+       "tick": 0,
+       "value": 0.22
+      },
+      {
+       "tick": 3320,
+       "value": 0.22
+      },
+      {
+       "tick": 3360,
+       "value": 0.62
+      },
+      {
+       "tick": 3839,
+       "value": 0.62
+      },
+      {
+       "tick": 4080,
+       "value": 0.22
+      },
+      {
+       "tick": 14840,
+       "value": 0.22
+      },
+      {
+       "tick": 14880,
+       "value": 0.7
+      },
+      {
+       "tick": 15240,
+       "value": 0.7
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Break",
+   "bars": 4,
+   "patterns": [
+    [
+     9,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 67,
+        "vel": 96
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 67,
+        "vel": 74
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 67,
+        "vel": 66
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 65,
+        "vel": 96
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 65,
+        "vel": 74
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 65,
+        "vel": 66
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 62,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 65,
+        "vel": 96
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 62,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 65,
+        "vel": 74
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 62,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 65,
+        "vel": 66
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 55,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 59,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 62,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 55,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 59,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 62,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 55,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 59,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 62,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       }
+      ]
+     }
+    ],
+    [
+     8,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 600,
+        "pitch": 57,
+        "vel": 112
+       },
+       {
+        "start": 720,
+        "len": 200,
+        "pitch": 57,
+        "vel": 88
+       },
+       {
+        "start": 1200,
+        "len": 420,
+        "pitch": 57,
+        "vel": 100
+       },
+       {
+        "start": 1680,
+        "len": 200,
+        "pitch": 57,
+        "vel": 80
+       },
+       {
+        "start": 1920,
+        "len": 600,
+        "pitch": 53,
+        "vel": 112
+       },
+       {
+        "start": 2640,
+        "len": 200,
+        "pitch": 53,
+        "vel": 88
+       },
+       {
+        "start": 3120,
+        "len": 420,
+        "pitch": 65,
+        "vel": 100
+       },
+       {
+        "start": 3600,
+        "len": 200,
+        "pitch": 53,
+        "vel": 80
+       },
+       {
+        "start": 3840,
+        "len": 600,
+        "pitch": 62,
+        "vel": 112
+       },
+       {
+        "start": 4560,
+        "len": 200,
+        "pitch": 62,
+        "vel": 88
+       },
+       {
+        "start": 5040,
+        "len": 420,
+        "pitch": 62,
+        "vel": 100
+       },
+       {
+        "start": 5520,
+        "len": 200,
+        "pitch": 62,
+        "vel": 80
+       },
+       {
+        "start": 5760,
+        "len": 600,
+        "pitch": 64,
+        "vel": 112
+       },
+       {
+        "start": 6480,
+        "len": 200,
+        "pitch": 64,
+        "vel": 88
+       },
+       {
+        "start": 6960,
+        "len": 420,
+        "pitch": 76,
+        "vel": 100
+       },
+       {
+        "start": 7440,
+        "len": 200,
+        "pitch": 64,
+        "vel": 80
+       }
+      ]
+     }
+    ],
+    [
+     11,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 0,
+        "len": 1860,
+        "pitch": 52,
+        "vel": 70
+       },
+       {
+        "start": 1920,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 1920,
+        "len": 1860,
+        "pitch": 52,
+        "vel": 70
+       },
+       {
+        "start": 3840,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 3840,
+        "len": 1860,
+        "pitch": 50,
+        "vel": 70
+       },
+       {
+        "start": 5760,
+        "len": 1860,
+        "pitch": 43,
+        "vel": 70
+       },
+       {
+        "start": 5760,
+        "len": 1860,
+        "pitch": 50,
+        "vel": 70
+       }
+      ]
+     }
+    ],
+    [
+     7,
+     {
+      "len_ticks": 3840,
+      "notes": [
+       {
+        "start": 600,
+        "len": 120,
+        "pitch": 60,
+        "vel": 76
+       },
+       {
+        "start": 1320,
+        "len": 120,
+        "pitch": 60,
+        "vel": 64
+       },
+       {
+        "start": 1680,
+        "len": 120,
+        "pitch": 60,
+        "vel": 80
+       },
+       {
+        "start": 2160,
+        "len": 120,
+        "pitch": 60,
+        "vel": 60
+       },
+       {
+        "start": 2520,
+        "len": 120,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 3240,
+        "len": 120,
+        "pitch": 60,
+        "vel": 66
+       }
+      ]
+     }
+    ],
+    [
+     3,
+     {
+      "len_ticks": 3840,
+      "notes": [
+       {
+        "start": 720,
+        "len": 120,
+        "pitch": 60,
+        "vel": 72
+       },
+       {
+        "start": 1560,
+        "len": 120,
+        "pitch": 60,
+        "vel": 60
+       },
+       {
+        "start": 2760,
+        "len": 120,
+        "pitch": 60,
+        "vel": 64
+       },
+       {
+        "start": 3480,
+        "len": 120,
+        "pitch": 60,
+        "vel": 70
+       }
+      ]
+     }
+    ],
+    [
+     12,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 120,
+        "pitch": 60,
+        "vel": 120
+       }
+      ]
+     }
+    ],
+    [
+     13,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 7440,
+        "len": 120,
+        "pitch": 60,
+        "vel": 96
+       }
+      ]
+     }
+    ]
+   ],
+   "automation": [
+    {
+     "target": {
+      "BusParam": {
+       "bus": 1,
+       "slot": 1,
+       "param": 0
+      }
+     },
+     "points": [
+      {
+       "tick": 0,
+       "value": 0.5
+      },
+      {
+       "tick": 5760,
+       "value": 0.74
+      },
+      {
+       "tick": 7440,
+       "value": 0.8
+      }
+     ]
+    },
+    {
+     "target": {
+      "PadVol": 11
+     },
+     "points": [
+      {
+       "tick": 0,
+       "value": 0.15
+      },
+      {
+       "tick": 7560,
+       "value": 0.3
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Outro",
+   "bars": 4,
+   "patterns": [
+    [
+     9,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 0,
+        "len": 900,
+        "pitch": 67,
+        "vel": 96
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 1200,
+        "len": 340,
+        "pitch": 67,
+        "vel": 74
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       },
+       {
+        "start": 1560,
+        "len": 260,
+        "pitch": 67,
+        "vel": 66
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 1920,
+        "len": 900,
+        "pitch": 65,
+        "vel": 96
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 3120,
+        "len": 340,
+        "pitch": 65,
+        "vel": 74
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       },
+       {
+        "start": 3480,
+        "len": 260,
+        "pitch": 65,
+        "vel": 66
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 57,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 60,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 62,
+        "vel": 96
+       },
+       {
+        "start": 3840,
+        "len": 900,
+        "pitch": 65,
+        "vel": 96
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 57,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 60,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 62,
+        "vel": 74
+       },
+       {
+        "start": 5040,
+        "len": 340,
+        "pitch": 65,
+        "vel": 74
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 57,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 60,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 62,
+        "vel": 66
+       },
+       {
+        "start": 5400,
+        "len": 260,
+        "pitch": 65,
+        "vel": 66
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 55,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 59,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 62,
+        "vel": 96
+       },
+       {
+        "start": 5760,
+        "len": 900,
+        "pitch": 64,
+        "vel": 96
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 55,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 59,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 62,
+        "vel": 74
+       },
+       {
+        "start": 6960,
+        "len": 340,
+        "pitch": 64,
+        "vel": 74
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 55,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 59,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 62,
+        "vel": 66
+       },
+       {
+        "start": 7320,
+        "len": 260,
+        "pitch": 64,
+        "vel": 66
+       }
+      ]
+     }
+    ],
+    [
+     11,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 0,
+        "len": 1860,
+        "pitch": 52,
+        "vel": 70
+       },
+       {
+        "start": 1920,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 1920,
+        "len": 1860,
+        "pitch": 52,
+        "vel": 70
+       },
+       {
+        "start": 3840,
+        "len": 1860,
+        "pitch": 45,
+        "vel": 70
+       },
+       {
+        "start": 3840,
+        "len": 1860,
+        "pitch": 50,
+        "vel": 70
+       },
+       {
+        "start": 5760,
+        "len": 1860,
+        "pitch": 43,
+        "vel": 70
+       },
+       {
+        "start": 5760,
+        "len": 1860,
+        "pitch": 50,
+        "vel": 70
+       }
+      ]
+     }
+    ],
+    [
+     4,
+     {
+      "len_ticks": 1920,
+      "notes": [
+       {
+        "start": 0,
+        "len": 120,
+        "pitch": 60,
+        "vel": 80
+       },
+       {
+        "start": 240,
+        "len": 120,
+        "pitch": 60,
+        "vel": 50
+       },
+       {
+        "start": 480,
+        "len": 120,
+        "pitch": 60,
+        "vel": 70
+       },
+       {
+        "start": 720,
+        "len": 120,
+        "pitch": 60,
+        "vel": 46
+       },
+       {
+        "start": 960,
+        "len": 120,
+        "pitch": 60,
+        "vel": 80
+       },
+       {
+        "start": 1200,
+        "len": 120,
+        "pitch": 60,
+        "vel": 50
+       },
+       {
+        "start": 1440,
+        "len": 120,
+        "pitch": 60,
+        "vel": 70
+       },
+       {
+        "start": 1680,
+        "len": 120,
+        "pitch": 60,
+        "vel": 46
+       }
+      ]
+     }
+    ],
+    [
+     12,
+     {
+      "len_ticks": 7680,
+      "notes": [
+       {
+        "start": 0,
+        "len": 120,
+        "pitch": 60,
+        "vel": 120
+       }
+      ]
+     }
+    ]
+   ],
+   "automation": [
+    {
+     "target": {
+      "BusParam": {
+       "bus": 1,
+       "slot": 1,
+       "param": 0
+      }
+     },
+     "points": [
+      {
+       "tick": 0,
+       "value": 0.5
+      },
+      {
+       "tick": 7560,
+       "value": 0.12
+      }
+     ]
+    },
+    {
+     "target": {
+      "BusLevel": 5
+     },
+     "points": [
+      {
+       "tick": 0,
+       "value": 0.6
+      },
+      {
+       "tick": 3840,
+       "value": 0.6
+      },
+      {
+       "tick": 7560,
+       "value": 0.0
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "scene": 0,
+ "chain": [
+  0,
+  1,
+  2,
+  3,
+  1,
+  2,
+  4
+ ],
+ "chain_on": true,
+ "vocal_fx": {
+  "gate_db": -80.0,
+  "deess": 0.0,
+  "duck_bus": 0
+ }
+}

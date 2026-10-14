@@ -267,7 +267,7 @@ fn queued_loop_takes_over_at_the_end_of_the_playing_one() {
     let _ = tx.push(Cmd::SceneLen(TICKS_PER_BAR));
     let _ = tx.push(Cmd::SetBpm(120.0));
     let _ = tx.push(Cmd::Play(true));
-    let swap = SceneSwap { index: 1, len_ticks: TICKS_PER_BAR, next_bar: false, patterns: vec![(0, None), (1, hit())] };
+    let swap = SceneSwap { index: 1, len_ticks: TICKS_PER_BAR, next_bar: false, patterns: vec![(0, None), (1, hit())], automation: None };
     let _ = tx.push(Cmd::QueueScene(Some(Box::new(swap))));
 
     // One bar at 120 BPM is two seconds.
@@ -525,4 +525,53 @@ fn a_full_drum_kit_is_cheap_to_run() {
     let used = t.elapsed().as_secs_f32();
     // All sixteen at once, for one second of audio, in well under a tenth of a second.
     assert!(used < 0.1, "a second of a full kit took {used} s");
+}
+
+fn lanes(target: AutoTarget, points: &[(u32, f32)]) -> Option<Automation> {
+    Some(Arc::new(vec![AutoLane { target, points: points.iter().map(|&(tick, value)| AutoPoint { tick, value }).collect() }]))
+}
+
+#[test]
+fn automation_moves_a_bus_and_lets_go_when_removed() {
+    let (mut e, mut tx, _) = rig();
+    let _ = tx.push(Cmd::SetPadCfg { pad: 0, cfg: PadCfg { bus: 1, mode: PlayMode::Loop, ..PadCfg::default() } });
+    let flat = Arc::new(SampleData::new(vec![0.5; 4800], vec![0.5; 4800]));
+    let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(flat) });
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    let _ = tx.push(Cmd::SceneLen(TICKS_PER_BAR));
+    // Bus 1's level rises from silence at the downbeat to full at beat 3 and holds.
+    let _ = tx.push(Cmd::SetAutomation(lanes(AutoTarget::BusLevel(0), &[(0, 0.0), (TICKS_PER_BAR / 2, 1.0 / LEVEL_MAX)])));
+    let _ = tx.push(Cmd::Play(true));
+    let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 0.0, key: 1 });
+    // At 120 BPM a bar is 96000 frames; halfway up the ramp is a quarter of the way in.
+    let out = run(&mut e, 96000);
+    let l: Vec<f32> = out.iter().step_by(2).copied().collect();
+    let at = |f: usize| peak(&l[f..f + 480]);
+    assert!(at(1000) < 0.05, "should start silent: {}", at(1000));
+    assert!((at(24000) / at(60000) - 0.5).abs() < 0.08, "ramp: {} then {}", at(24000), at(60000));
+    // Taking the lane away puts the level back where it was set by hand.
+    let _ = tx.push(Cmd::SetBus { bus: 0, cfg: BusCfg { level: 0.25, ..BusCfg::default() } });
+    let _ = tx.push(Cmd::SetAutomation(None));
+    let out = run(&mut e, 4800);
+    let level = peak(&out[4800..]);
+    assert!((level - 0.25 * 0.4).abs() < 0.03, "level after release {level}");
+}
+
+#[test]
+fn a_loop_switch_brings_its_own_automation() {
+    let (mut e, mut tx, _) = rig();
+    let _ = tx.push(Cmd::SetPadCfg { pad: 0, cfg: PadCfg { mode: PlayMode::Loop, ..PadCfg::default() } });
+    let flat = Arc::new(SampleData::new(vec![0.5; 4800], vec![0.5; 4800]));
+    let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(flat) });
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    let _ = tx.push(Cmd::SceneLen(TICKS_PER_BAR));
+    let _ = tx.push(Cmd::Play(true));
+    let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 0.0, key: 1 });
+    // The next loop pulls the pad's volume right down.
+    let swap = SceneSwap { index: 1, len_ticks: TICKS_PER_BAR, next_bar: false, patterns: vec![], automation: lanes(AutoTarget::PadVol(0), &[(0, 0.0)]) };
+    let _ = tx.push(Cmd::QueueScene(Some(Box::new(swap))));
+    let out = run(&mut e, 96000 * 2);
+    let l: Vec<f32> = out.iter().step_by(2).copied().collect();
+    assert!(peak(&l[40000..41000]) > 0.2, "first loop should be heard");
+    assert!(peak(&l[140000..141000]) < 1e-3, "second loop's automation should silence the pad");
 }

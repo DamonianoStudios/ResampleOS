@@ -119,6 +119,8 @@ These apply while the piano roll is showing.
 | Chain entry | Click | Remove it from the chain |
 | Chain entry | Drag | Move it to another place in the chain |
 | Step of a drum pad | `Alt` + click | Lock knob values to that step |
+| Bus knob, slider, fader or pan; pad volume, pan or cutoff | Right-click | Automate it in this loop |
+| Automation lane | Click, drag, right-click | Add a point, move it, delete it. `Alt` places it off the grid |
 | Take lane | Drag (Comp tool) | Put that stretch of the take in the comp |
 | Vocal clip | Drag (Move tool) | Move in time or to another lane. `Alt` + drag slips the audio inside it |
 | Vocal clip | Click (Cut tool) | Cut in two. Right-click for mute, repeat, delete, use in comp |

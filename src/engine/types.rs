@@ -296,6 +296,80 @@ impl Default for VocalFx {
     }
 }
 
+/// What an automation lane moves. Lane values are 0..1, spread over the control's range.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub enum AutoTarget {
+    /// One of a bus effect's three knobs (0-2) or two sliders (3-4).
+    BusParam { bus: u8, slot: u8, param: u8 },
+    BusLevel(u8),
+    BusPan(u8),
+    PadVol(u16),
+    PadPan(u16),
+    PadCutoff(u16),
+}
+
+/// Highest level a bus or pad reaches; a lane value of 1 is this.
+pub const LEVEL_MAX: f32 = 1.5;
+
+impl AutoTarget {
+    /// The control's own value for a lane value.
+    pub fn scale_up(self, v: f32) -> f32 {
+        match self {
+            AutoTarget::BusLevel(_) | AutoTarget::PadVol(_) => v * LEVEL_MAX,
+            AutoTarget::BusPan(_) | AutoTarget::PadPan(_) => v * 2.0 - 1.0,
+            AutoTarget::BusParam { .. } | AutoTarget::PadCutoff(_) => v,
+        }
+    }
+
+    /// The lane value for a control's own value.
+    pub fn scale_down(self, v: f32) -> f32 {
+        match self {
+            AutoTarget::BusLevel(_) | AutoTarget::PadVol(_) => v / LEVEL_MAX,
+            AutoTarget::BusPan(_) | AutoTarget::PadPan(_) => (v + 1.0) * 0.5,
+            AutoTarget::BusParam { .. } | AutoTarget::PadCutoff(_) => v,
+        }
+        .clamp(0.0, 1.0)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
+pub struct AutoPoint {
+    /// Ticks from the start of the loop.
+    pub tick: u32,
+    pub value: f32,
+}
+
+/// One control's movement through a loop: straight lines between points, holding the
+/// first point's value before it and the last one's after it.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct AutoLane {
+    pub target: AutoTarget,
+    /// In order of tick.
+    pub points: Vec<AutoPoint>,
+}
+
+impl AutoLane {
+    pub fn value_at(&self, tick: f64) -> Option<f32> {
+        let pts = &self.points;
+        let first = pts.first()?;
+        if tick <= first.tick as f64 {
+            return Some(first.value);
+        }
+        let after = pts.iter().position(|p| p.tick as f64 > tick);
+        Some(match after {
+            None => pts[pts.len() - 1].value,
+            Some(i) => {
+                let (a, b) = (pts[i - 1], pts[i]);
+                let t = ((tick - a.tick as f64) / (b.tick - a.tick).max(1) as f64) as f32;
+                a.value + (b.value - a.value) * t
+            }
+        })
+    }
+}
+
+/// The lanes of one loop, as the engine holds them.
+pub type Automation = Arc<Vec<AutoLane>>;
+
 /// The patterns of a loop that is waiting to take over from the one playing.
 pub struct SceneSwap {
     pub index: u32,
@@ -305,6 +379,8 @@ pub struct SceneSwap {
     /// Every pad that has a pattern in either loop. After the switch this holds the
     /// outgoing patterns, and the whole thing goes back to the UI to be dropped.
     pub patterns: Vec<(u16, Option<Arc<Pattern>>)>,
+    /// The incoming loop's automation; after the switch, the outgoing loop's.
+    pub automation: Option<Automation>,
 }
 
 pub enum Cmd {
@@ -312,6 +388,8 @@ pub enum Cmd {
     SceneLen(u32),
     /// Line up the next loop, or cancel the one lined up.
     QueueScene(Option<Box<SceneSwap>>),
+    /// Automation for the playing loop.
+    SetAutomation(Option<Automation>),
     SetPadPlugin { pad: u16, plugin: Option<Box<PluginRt>> },
     /// `slot` is `bus * 3 + slot`.
     SetFxPlugin { slot: u8, plugin: Option<Box<PluginRt>> },
@@ -351,6 +429,7 @@ pub enum Garbage {
     Sample(Arc<SampleData>),
     Pattern(Arc<Pattern>),
     Scene(Box<SceneSwap>),
+    Automation(Automation),
     Input(Consumer<f32>),
     Plugin(Box<PluginRt>),
 }

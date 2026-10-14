@@ -269,8 +269,12 @@ fn envelope(app: &mut App, ui: &mut Ui, rect: Rect, p: &mut DrumParams) {
         painter.circle_filled(pos, if hot { 7.0 } else { 6.0 }, colour);
         painter.circle_stroke(pos, if hot { 7.0 } else { 6.0 }, Stroke::new(1.5, Color32::BLACK));
         let label = format!("{} · {}", names[xm], names[ym]);
+        // One label above its handle and the other below, so two handles close together
+        // do not write over each other.
         let left = pos.x > screen.center().x;
-        painter.text(pos + vec2(if left { -10.0 } else { 10.0 }, -10.0), if left { Align2::RIGHT_BOTTOM } else { Align2::LEFT_BOTTOM }, label, FontId::proportional(10.0), if hot { theme::TEXT } else { colour });
+        let (dy, v) = if h == 0 { (-10.0, egui::Align::Max) } else { (10.0, egui::Align::Min) };
+        let anchor = Align2([if left { egui::Align::Max } else { egui::Align::Min }, v]);
+        painter.text(pos + vec2(if left { -10.0 } else { 10.0 }, dy), anchor, label, FontId::proportional(10.0), if hot { theme::TEXT } else { colour });
         resp.on_hover_text(format!("Drag: left and right for {}, up and down for {}", names[xm], names[ym]));
     }
 }

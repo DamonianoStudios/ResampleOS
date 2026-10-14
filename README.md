@@ -31,6 +31,7 @@ A short tour of the tabs: [demo-tour.gif](docs/images/demo-tour.gif).
 - **Transient chop.** One key spreads a sample's slices across the next empty bank.
 - **Piano roll and step sequencer.** Scale-locked piano roll with a velocity lane and free microtiming; a step grid per bank for drum patterns; swing and humanize on top.
 - **Loops, chain and perform mode.** Up to sixteen loops of 1 to 16 bars over the same pads, switched on the beat, chained into an arrangement, or launched live from the pads.
+- **Automation.** Bus effect knobs, bus levels and pans, and pad volume, pan and cutoff can move through each loop: drawn in a lane, or recorded by turning the control while the loop plays.
 - **Drum synth.** Five engines (kick, snare and clap, metallic, FM, modal) with eight macros each, velocity and random amounts per knob, knob values locked to individual steps, seven 16-pad kits, and one key to bake a hit into a sample that can always be turned back into the synth.
 - **Vocal takes.** A vocal pad records a take each time round the loop, with swipe comping, cut, move and slip editing, doubles, and baking to a pad or to a bank of phrases. A dedicated vocal bus has scale-locked pitch correction, levelling and a dub throw.
 - **Performance buses.** Four buses, a vocal bus and a master, three effect slots each: vinyl, cassette, 3-band EQ, DJ isolator and filter, bit-crush, compressor, tape delay, reverb. Buses can feed later buses and can be sidechained from one another.

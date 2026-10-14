@@ -4,7 +4,7 @@
 
 use super::{channel_fader, fader, knob, knob_sized, theme, toggle};
 use crate::app::{App, PluginTarget};
-use crate::engine::{BusCfg, SlotCfg};
+use crate::engine::{AutoTarget, BusCfg, SlotCfg};
 use crate::fx::FxKind;
 use crate::shared::{MASTER, NUM_BUSES, VOCAL, bus_label, f32_load};
 use eframe::egui::{self, Pos2, Rect, Sense, Ui, vec2};
@@ -44,6 +44,9 @@ struct Requests {
     browse: Option<usize>,
     editor: Option<usize>,
     unload: Option<usize>,
+    /// Controls to give the automation menu and recording: response, what it moves, and
+    /// its value now.
+    hooks: Vec<(egui::Response, AutoTarget, f32)>,
 }
 
 fn strip(app: &mut App, ui: &mut Ui, b: usize) {
@@ -69,7 +72,11 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
     }
     let peaks = (f32_load(&app.shared.bus_peak[b * 2]), f32_load(&app.shared.bus_peak[b * 2 + 1]));
     let mut fader_ui = ui.new_child(egui::UiBuilder::new().max_rect(fader_rect));
-    channel_fader(&mut fader_ui, &mut cfg.level, peaks, vec2(FADER_W, full.height() - 2.0), accent_of(b));
+    let level = channel_fader(&mut fader_ui, &mut cfg.level, peaks, vec2(FADER_W, full.height() - 2.0), accent_of(b));
+    asks.hooks.push((level, AutoTarget::BusLevel(b as u8), cfg.level));
+    for (resp, target, value) in std::mem::take(&mut asks.hooks) {
+        super::automation::hook(app, ui, &resp, target, value);
+    }
 
     if cfg != before {
         app.buses[b] = cfg;
@@ -107,7 +114,8 @@ fn header(app: &mut App, ui: &mut Ui, cfg: &mut BusCfg, b: usize) {
         }
         sidechain_menu(ui, cfg, b);
         let width = ui.available_width().clamp(26.0, 40.0);
-        super::pan_box(ui, &mut cfg.pan, accent, width);
+        let pan = super::pan_box(ui, &mut cfg.pan, accent, width);
+        super::automation::hook(app, ui, &pan, AutoTarget::BusPan(b as u8), cfg.pan);
     });
 }
 
@@ -163,7 +171,8 @@ fn effect_slot(app: &mut App, ui: &mut Ui, cfg: &mut BusCfg, b: usize, s: usize,
             });
         }
         _ => {
-            if ui.horizontal(|ui| built_in_controls(ui, slot, width, col)).inner {
+            let at = (b as u8, s as u8);
+            if ui.horizontal(|ui| built_in_controls(ui, slot, at, width, col, &mut asks.hooks)).inner {
                 // The hardware encoders follow whichever slot was touched last.
                 app.focus_bus = b;
                 app.focus_slot = s;
@@ -186,7 +195,8 @@ fn knob_layout(room: f32, sliders: bool) -> (f32, f32) {
 }
 
 /// A built-in effect's knobs and sliders. Returns whether one was touched.
-fn built_in_controls(ui: &mut Ui, slot: &mut SlotCfg, width: f32, col: egui::Color32) -> bool {
+fn built_in_controls(ui: &mut Ui, slot: &mut SlotCfg, (bus, at): (u8, u8), width: f32, col: egui::Color32, hooks: &mut Vec<(egui::Response, AutoTarget, f32)>) -> bool {
+    let target = |param: u8| AutoTarget::BusParam { bus, slot: at, param };
     let names = slot.kind.param_names();
     let defaults = slot.kind.defaults();
     let sliders = slot.kind.slider_names();
@@ -198,6 +208,7 @@ fn built_in_controls(ui: &mut Ui, slot: &mut SlotCfg, width: f32, col: egui::Col
     for k in 0..3 {
         let r = knob_sized(ui, &mut slot.params[k], names[k], defaults[k], col, radius);
         touched |= r.dragged() || r.clicked();
+        hooks.push((r, target(k as u8), slot.params[k]));
     }
     if let Some(names) = sliders {
         let defaults = slot.kind.slider_defaults();
@@ -207,7 +218,8 @@ fn built_in_controls(ui: &mut Ui, slot: &mut SlotCfg, width: f32, col: egui::Col
         for k in 0..2 {
             let r = fader(ui, &mut slot.sliders[k], names[k], defaults[k], col);
             touched |= r.dragged() || r.clicked();
-            r.on_hover_text(format!("{} {}. The mid bell sits at {}.", what[k], hertz(hz[k]), hertz(mid)));
+            let r = r.on_hover_text(format!("{} {}. The mid bell sits at {}.", what[k], hertz(hz[k]), hertz(mid)));
+            hooks.push((r, target(3 + k as u8), slot.sliders[k]));
         }
     }
     touched

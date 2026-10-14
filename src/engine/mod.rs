@@ -98,6 +98,13 @@ pub struct Engine {
     any_solo: bool,
 
     buses: [BusCfg; NUM_BUSES],
+    /// The buses as set by hand; `buses` is this with automation on top.
+    bus_base: [BusCfg; NUM_BUSES],
+    automation: Option<Automation>,
+    /// Pad levels, pans and cutoffs as set by hand, for pads automation has moved, so
+    /// they can be put back once it stops.
+    pad_base: Vec<[f32; 3]>,
+    auto_pads: Vec<u16>,
     fx: Vec<Fx>,
     bufs: Vec<[Vec<f32>; 2]>,
     scratch: Vec<f32>,
@@ -192,6 +199,10 @@ impl Engine {
             age: 0,
             any_solo: false,
             buses: [BusCfg::default(); NUM_BUSES],
+            bus_base: [BusCfg::default(); NUM_BUSES],
+            automation: None,
+            pad_base: vec![[0.8, 0.0, 1.0]; MAX_PADS],
+            auto_pads: Vec::with_capacity(MAX_PADS),
             fx: (0..NUM_BUSES * 3).map(|_| Fx::new(sr)).collect(),
             bufs: (0..NUM_BUSES).map(|_| [vec![0.0; MAX_BLOCK], vec![0.0; MAX_BLOCK]]).collect(),
             scratch: vec![0.0; MAX_BLOCK],
@@ -271,6 +282,64 @@ impl Engine {
         }
     }
 
+    /// Puts every control automation has moved back to where it was set by hand. The
+    /// next block applies whatever automation is current again.
+    fn release_automation(&mut self) {
+        self.buses = self.bus_base;
+        for k in 0..self.auto_pads.len() {
+            let pad = self.auto_pads[k] as usize;
+            let [vol, pan, cutoff] = self.pad_base[pad];
+            let cfg = &mut self.pads[pad].cfg;
+            (cfg.vol, cfg.pan, cfg.cutoff) = (vol, pan, cutoff);
+        }
+        self.auto_pads.clear();
+    }
+
+    /// Moves the automated controls to where their lanes are at the playhead.
+    fn apply_automation(&mut self) {
+        let Engine { automation, buses, bus_base, pads, pad_base, auto_pads, tick, .. } = self;
+        let Some(lanes) = automation.as_ref() else { return };
+        *buses = *bus_base;
+        for lane in lanes.iter() {
+            let Some(v) = lane.value_at(*tick) else { continue };
+            let value = lane.target.scale_up(v);
+            match lane.target {
+                AutoTarget::BusParam { bus, slot, param } => {
+                    if let Some(slot) = buses.get_mut(bus as usize).and_then(|b| b.slots.get_mut(slot as usize)) {
+                        match param {
+                            0..=2 => slot.params[param as usize] = value,
+                            3 | 4 => slot.sliders[param as usize - 3] = value,
+                            _ => {}
+                        }
+                    }
+                }
+                AutoTarget::BusLevel(b) => {
+                    if let Some(bus) = buses.get_mut(b as usize) {
+                        bus.level = value;
+                    }
+                }
+                AutoTarget::BusPan(b) => {
+                    if let Some(bus) = buses.get_mut(b as usize) {
+                        bus.pan = value;
+                    }
+                }
+                AutoTarget::PadVol(p) | AutoTarget::PadPan(p) | AutoTarget::PadCutoff(p) => {
+                    let Some(pad) = pads.get_mut(p as usize) else { continue };
+                    if !auto_pads.contains(&p) {
+                        auto_pads.push(p);
+                        let c = &pad.cfg;
+                        pad_base[p as usize] = [c.vol, c.pan, c.cutoff];
+                    }
+                    match lane.target {
+                        AutoTarget::PadVol(_) => pad.cfg.vol = value,
+                        AutoTarget::PadPan(_) => pad.cfg.pan = value,
+                        _ => pad.cfg.cutoff = value,
+                    }
+                }
+            }
+        }
+    }
+
     /// Cuts everything sounding in choke group `group`: samples and drum hits alike.
     fn choke(&mut self, group: u8) {
         for v in self.voices.iter_mut() {
@@ -318,6 +387,8 @@ impl Engine {
                     self.refresh_seq(pad);
                 }
             }
+            std::mem::swap(&mut self.automation, &mut q.automation);
+            self.release_automation();
             self.scene_len = q.len_ticks;
             self.shared.scene_index.store(q.index, Ordering::Relaxed);
             self.trash(Garbage::Scene(q));
@@ -422,6 +493,7 @@ impl Engine {
                 if (pad as usize) < MAX_PADS {
                     let solo_changed = self.pads[pad as usize].cfg.solo != cfg.solo;
                     self.pads[pad as usize].cfg = cfg;
+                    self.pad_base[pad as usize] = [cfg.vol, cfg.pan, cfg.cutoff];
                     if solo_changed {
                         self.any_solo = self.pads.iter().any(|p| p.cfg.solo);
                     }
@@ -453,7 +525,14 @@ impl Engine {
             Cmd::SetBus { bus, cfg } => {
                 if (bus as usize) < NUM_BUSES {
                     self.buses[bus as usize] = cfg;
+                    self.bus_base[bus as usize] = cfg;
                 }
+            }
+            Cmd::SetAutomation(lanes) => {
+                if let Some(old) = std::mem::replace(&mut self.automation, lanes) {
+                    self.trash(Garbage::Automation(old));
+                }
+                self.release_automation();
             }
             Cmd::SetScale(mask) => self.scale = mask,
             Cmd::SetVocalFx(fx) => self.vocal_fx = fx,

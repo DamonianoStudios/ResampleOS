@@ -2,7 +2,7 @@
 
 use super::{pill, roll, steps, theme, toggle};
 use crate::app::{App, PadAction, Tab};
-use crate::engine::{PadCfg, PadKind, PlayMode};
+use crate::engine::{AutoTarget, PadCfg, PadKind, PlayMode};
 use crate::music::pad_label;
 use crate::shared::{MASTER, bus_label};
 use eframe::egui::{self, Align2, Color32, FontId, PointerButton, Pos2, Rect, Sense, Stroke, Ui, vec2};
@@ -27,7 +27,7 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
         ui.add(egui::TextEdit::singleline(&mut app.pads[sel].name).desired_width(130.0).hint_text("name"));
         ui.add_space(6.0);
         ui.spacing_mut().item_spacing.x = 2.0;
-        for (tab, label) in [(Tab::Wave, "Waveform"), (Tab::Roll, "Piano Roll"), (Tab::Steps, "Steps"), (Tab::Mod, "Mod / Warp"), (Tab::Vocal, "Vocal"), (Tab::Drum, "Drum")] {
+        for (tab, label) in [(Tab::Wave, "Waveform"), (Tab::Roll, "Piano Roll"), (Tab::Steps, "Steps"), (Tab::Mod, "Mod / Warp"), (Tab::Vocal, "Vocal"), (Tab::Drum, "Drum"), (Tab::Auto, "Automation")] {
             if pill(ui, app.tab == tab, label).clicked() {
                 app.tab = tab;
                 if tab == Tab::Roll {
@@ -57,9 +57,11 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
 
     ui.horizontal(|ui| {
         ui.label("Vol");
-        ui.add(egui::Slider::new(&mut cfg.vol, 0.0..=1.5).show_value(false));
+        let vol = ui.add(egui::Slider::new(&mut cfg.vol, 0.0..=1.5).show_value(false));
+        super::automation::hook(app, ui, &vol, AutoTarget::PadVol(sel as u16), cfg.vol);
         ui.label("Pan");
-        super::pan_box(ui, &mut cfg.pan, theme::AMBER, 40.0);
+        let pan = super::pan_box(ui, &mut cfg.pan, theme::AMBER, 40.0);
+        super::automation::hook(app, ui, &pan, AutoTarget::PadPan(sel as u16), cfg.pan);
         if toggle(ui, cfg.mute, "M", theme::RED).on_hover_text("Mute (hold M + pad)").clicked() {
             cfg.mute ^= true;
         }
@@ -100,11 +102,11 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     ui.separator();
 
     // The roll and step tabs edit the pad themselves, so they get the committed settings.
-    let own_editor = matches!(app.tab, Tab::Roll | Tab::Steps | Tab::Vocal | Tab::Drum);
+    let own_editor = matches!(app.tab, Tab::Roll | Tab::Steps | Tab::Vocal | Tab::Drum | Tab::Auto);
     match app.tab {
         Tab::Wave => action = wave_tab(app, ui, &mut cfg).or(action),
         Tab::Mod => super::modwarp::draw(app, ui, &mut cfg),
-        Tab::Roll | Tab::Steps | Tab::Vocal | Tab::Drum => {}
+        Tab::Roll | Tab::Steps | Tab::Vocal | Tab::Drum | Tab::Auto => {}
     }
     if cfg != before {
         app.pads[sel].cfg = cfg;
@@ -118,6 +120,7 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
             Tab::Roll => roll::draw(app, ui),
             Tab::Vocal => super::vocal::draw(app, ui),
             Tab::Drum => super::drum::draw(app, ui),
+            Tab::Auto => super::automation::draw(app, ui),
             _ => steps::draw(app, ui),
         }
     }

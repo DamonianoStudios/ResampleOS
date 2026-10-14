@@ -66,6 +66,10 @@ A change of loop has to land exactly on the beat, so the UI does not make it. It
 
 On the UI side the pads always carry the patterns of the loop on screen; the others are kept in `App::scenes` (`src/app/scenes.rs`). Undo snapshots store all patterns with their loops and none on the pads, so moving between loops is not seen as an edit.
 
+### Automation
+
+Automation lives on each loop (`Scene::automation`), so it travels with the loop: undo, project files and the chain all handle it as part of the loop. The engine holds the playing loop's lanes (`Cmd::SetAutomation`, and in `SceneSwap` for the loop coming in, swapped on the same sample as the patterns). Each block it starts from the buses as set by hand (`bus_base`) and writes the lanes' values over them at the playhead; pads it has moved are remembered with their hand-set volume, pan and cutoff and put back when no lane moves them any more. The UI never shows automated values on the controls; they keep showing what was set by hand.
+
 ### Drum synth
 
 `src/drum.rs` holds the five drum engines. A drum pad's patch is part of its `PadCfg`, so it reaches the engine with the pad's other settings and is covered by undo and project files without anything extra. Each hit resolves the patch once (velocity amounts, random ranges and any values locked to the step, which travel on the `Note` and its `Event`) and starts a `DrumVoice` from a fixed pool. A voice is plain data with every coefficient worked out when it starts, so rendering is a few multiplies per sample. Baking runs the same voice offline. A baked take is matched to its patch by buffer identity in `PadModel::drum_patches`, which is how stepping back to the synth finds the right knobs.

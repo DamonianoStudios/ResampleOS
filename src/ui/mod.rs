@@ -1,5 +1,6 @@
 //! The four-zone viewport plus floating windows.
 
+mod automation;
 mod browser;
 mod buses;
 mod drum;
@@ -18,7 +19,7 @@ mod widgets;
 mod windows;
 
 pub use theme::install as install_theme;
-pub(crate) use widgets::{channel_fader, db, fader, humanize, knob, knob_sized, pan_box, pill, tag, toggle, transport_button};
+pub(crate) use widgets::{channel_fader, db, fader, humanize, knob, knob_sized, pan_box, pan_text, pill, tag, toggle, transport_button};
 
 use crate::app::App;
 use eframe::egui::{self, Ui};
@@ -27,6 +28,9 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     let ctx = ui.ctx().clone();
 
     // Anything held with the mouse (a pad, an auditioned note) ends when the button lifts.
+    if !ctx.input(|i| i.pointer.primary_down()) {
+        app.end_recording();
+    }
     if ctx.input(|i| i.pointer.primary_released())
         && let Some((pad, key)) = app.mouse_held.take() {
             app.note_off(pad, key);

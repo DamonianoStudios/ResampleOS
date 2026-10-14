@@ -1,3 +1,5 @@
 /target
-# Showcase projects are built from licensed samples and stay local.
+# Showcase projects are built from licensed samples and stay local...
 /showcase/*/
+# ...except the one made only from the app's own sounds.
+!/showcase/built-in-boom-bap/
