@@ -269,4 +269,24 @@ impl App {
             self.scenes[scene].patterns.iter().filter(|(_, p)| !p.notes.is_empty()).count()
         }
     }
+
+    /// Moves chain entry `from` to position `to`, keeping the entry that is playing marked
+    /// as the one playing.
+    pub fn chain_move(&mut self, from: usize, to: usize) {
+        if from >= self.chain.len() || to >= self.chain.len() || from == to {
+            return;
+        }
+        let entry = self.chain.remove(from);
+        self.chain.insert(to, entry);
+        let pos = self.chain_pos;
+        self.chain_pos = if pos == from {
+            to
+        } else if from < pos && to >= pos {
+            pos - 1
+        } else if from > pos && to <= pos {
+            pos + 1
+        } else {
+            pos
+        };
+    }
 }

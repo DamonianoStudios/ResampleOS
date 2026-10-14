@@ -11,7 +11,9 @@ pub fn knob(ui: &mut Ui, value: &mut f32, label: &str, default: f32, color: Colo
 /// A knob with a cap of radius `r`, for rows that have to fit more than three controls.
 /// It keeps the standard knob's height so the two can share a row.
 pub fn knob_sized(ui: &mut Ui, value: &mut f32, label: &str, default: f32, color: Color32, r: f32) -> Response {
-    let (rect, mut resp) = ui.allocate_exact_size(vec2(r * 2.0 + 20.0, 56.0), Sense::click_and_drag());
+    // Below the standard size the label gets a little less room either side.
+    let pad = if r < 7.5 { 12.0 } else { 20.0 };
+    let (rect, mut resp) = ui.allocate_exact_size(vec2(r * 2.0 + pad, 56.0), Sense::click_and_drag());
     if resp.dragged() {
         let d = resp.drag_delta();
         let fine = if ui.input(|i| i.modifiers.shift) { 0.25 } else { 1.0 };
@@ -45,11 +47,12 @@ pub fn knob_sized(ui: &mut Ui, value: &mut f32, label: &str, default: f32, color
     p.circle_stroke(c, r, Stroke::new(1.0, theme::mix(theme::RAISED, theme::TEXT, 0.14)));
     let a = ang(*value);
     p.circle_filled(c + vec2(a.cos(), a.sin()) * (r - 4.5), 2.2, if hot { theme::TEXT } else { color });
-    p.text(
+    // The label may run wider than the knob, into the gap beside it.
+    ui.painter().text(
         Pos2::new(rect.center().x, rect.bottom()),
         Align2::CENTER_BOTTOM,
         label,
-        FontId::proportional(10.5),
+        FontId::proportional(if r < 7.5 { 9.5 } else { 10.5 }),
         if hot { theme::TEXT } else { theme::DIM },
     );
     resp.on_hover_text(format!("{label}: {:.0}%", *value * 100.0))
@@ -133,6 +136,64 @@ pub fn pan_box(ui: &mut Ui, pan: &mut f32, color: Color32, width: f32) -> Respon
         if hot { theme::TEXT } else { theme::DIM },
     );
     resp.on_hover_text(format!("Pan: {}. Drag sideways, double-click to centre.", pan_text(*pan)))
+}
+
+/// Highest gain a channel fader reaches: +3.5 dB.
+const FADER_MAX: f32 = 1.5;
+
+/// Where a gain sits on a channel fader, 0 at the bottom to 1 at the top. A square-root
+/// law, as on a console: unity three quarters of the way up, and most of the travel spent
+/// in the range that matters.
+fn fader_pos(gain: f32) -> f32 {
+    (gain / FADER_MAX).clamp(0.0, 1.0).sqrt()
+}
+
+/// A console channel's long fader with the stereo meter beside it. Drag (Shift for fine),
+/// double-click for unity. `level` is a gain, 0 to 1.5.
+pub fn channel_fader(ui: &mut Ui, level: &mut f32, peaks: (f32, f32), size: egui::Vec2, color: Color32) -> Response {
+    let (rect, mut resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
+    // Meter at the left of the column, fader at the right.
+    let meter_w = 7.0;
+    let readout = 16.0;
+    let travel = Rect::from_min_max(Pos2::new(rect.left() + meter_w + 3.0, rect.top() + 8.0), Pos2::new(rect.right(), rect.bottom() - readout - 6.0));
+    if resp.dragged() {
+        let fine = if ui.input(|i| i.modifiers.shift) { 0.25 } else { 1.0 };
+        let t = (fader_pos(*level) - resp.drag_delta().y / travel.height() * fine).clamp(0.0, 1.0);
+        *level = t * t * FADER_MAX;
+        resp.mark_changed();
+    }
+    if resp.double_clicked() {
+        *level = 1.0;
+        resp.mark_changed();
+    }
+    let hot = resp.hovered() || resp.dragged();
+    let p = ui.painter_at(rect.expand(2.0));
+    let bars = Rect::from_min_max(Pos2::new(rect.left(), travel.top()), Pos2::new(rect.left() + meter_w, travel.bottom()));
+    let half = (bars.width() - 1.0) * 0.5;
+    meter(&p, Rect::from_min_size(bars.min, vec2(half, bars.height())), peaks.0);
+    meter(&p, Rect::from_min_size(bars.min + vec2(half + 1.0, 0.0), vec2(half, bars.height())), peaks.1);
+
+    // The slot the fader runs in, with marks at +3, 0, -6, -12, -24 and -48 dB.
+    let x = travel.center().x;
+    let y_of = |t: f32| travel.bottom() - t * travel.height();
+    for db_mark in [3.0f32, 0.0, -6.0, -12.0, -24.0, -48.0] {
+        let y = y_of(fader_pos(10f32.powf(db_mark / 20.0)));
+        let w = if db_mark == 0.0 { 9.0 } else { 5.0 };
+        p.hline(x - w..=x + w, y, Stroke::new(1.0, if db_mark == 0.0 { theme::DIM } else { theme::FAINT }));
+    }
+    let slot = Rect::from_center_size(Pos2::new(x, travel.center().y), vec2(4.0, travel.height() + 6.0));
+    p.rect_filled(slot, 2.0, Color32::from_rgb(8, 8, 10));
+    let y = y_of(fader_pos(*level));
+    p.rect_filled(Rect::from_min_max(Pos2::new(x - 1.0, y), Pos2::new(x + 1.0, slot.bottom() - 2.0)), 1.0, color.gamma_multiply(0.6));
+    // The cap: a ridged key standing off the panel, with a line across its middle.
+    let cap = Rect::from_center_size(Pos2::new(x, y), vec2(travel.width().min(20.0), 14.0));
+    theme::paint_key(&p, cap, 3.0, if hot { theme::HOVER } else { theme::RAISED }, resp.dragged());
+    p.hline(cap.x_range().shrink(3.0), y, Stroke::new(1.5, if hot { theme::TEXT } else { color }));
+
+    let dbs = db(*level);
+    let text = if *level < 1e-4 { "-inf".to_string() } else { format!("{dbs:+.1}") };
+    p.text(Pos2::new(rect.center().x, rect.bottom()), Align2::CENTER_BOTTOM, text, FontId::proportional(10.0), if hot { theme::TEXT } else { theme::DIM });
+    resp.on_hover_text("Bus level. Drag, Shift for fine, double-click for 0 dB.")
 }
 
 pub fn db(v: f32) -> f32 {

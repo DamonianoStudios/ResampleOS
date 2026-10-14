@@ -339,7 +339,7 @@ impl App {
         let p = &mut self.pads[pad];
         if p.pattern.notes.is_empty() {
             p.pattern.len_ticks = scene_ticks;
-            p.pattern.notes.push(Note { start: 0, len: scene_ticks.min(TICKS_PER_BAR), pitch: 60, vel: 100 });
+            p.pattern.notes.push(Note::new(0, scene_ticks.min(TICKS_PER_BAR), 60, 100));
             self.push_pattern(pad);
         }
         self.status = format!("{}: {name} recorded ({count} take{})", pad_label(pad), if count == 1 { "" } else { "s" });

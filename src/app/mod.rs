@@ -1,6 +1,7 @@
 //! Application state and every action the UI, keyboard and controllers can perform.
 mod capture;
 mod conform;
+mod drum;
 mod history;
 mod input;
 mod pads;
@@ -11,6 +12,7 @@ mod scenes;
 mod state;
 mod vocal;
 
+pub use drum::{DrumUi, MacroLayer};
 pub use history::History;
 pub use pads::PadAction;
 pub use scenes::{MAX_CHAIN, MAX_SCENES, Scene};
@@ -131,11 +133,14 @@ pub struct App {
     /// Step sequencer: ticks per step, and what a drag is painting.
     pub step_res: u32,
     pub step_bars: u32,
+    /// Which four bars of a long pattern the step sequencer shows.
+    pub step_page: u32,
     pub step_paint: Option<bool>,
     /// Choke matrix: whether a drag is assigning or clearing.
     pub choke_paint: Option<bool>,
 
     pub vocal: VocalUi,
+    pub drum: DrumUi,
     vocal_work: vocal::VocalWork,
     sent_scale: u16,
     /// Perform mode: the pad matrix launches loops.
@@ -144,6 +149,8 @@ pub struct App {
     pub queued_scene: Option<usize>,
     /// Which chain entry is playing.
     pub chain_pos: usize,
+    /// The chain entry being dragged to a new place, if any.
+    pub chain_drag: Option<usize>,
     /// Launch on the next bar line rather than at the end of the playing loop.
     pub launch_on_bar: bool,
     seen_starts: u32,
@@ -221,7 +228,7 @@ impl App {
             resample: Resample::Idle,
             skip: SkipUi { window_secs: 30.0, sel: None, frozen_end: None, mark_in: None, dragging_out: false },
             harm: Harmonizer { open: false, bpm: 120.0, root: 0, minor: false, tempo: true, key: true },
-            roll: RollUi { snap: 3, scale_lock: true, ghosts: true, rec: false, top_f: 72.0, last_len: 120, drag: None, sel: Vec::new(), sel_pad: 0, marquee: None },
+            roll: RollUi { snap: 3, scale_lock: true, ghosts: true, rec: false, top_f: 72.0, last_len: 120, drag: None, sel: Vec::new(), sel_pad: 0, marquee: None, zoom: 1.0, scroll: 0.0, follow: true },
             show_choke: false,
             show_help: false,
             sensitivity: 0.5,
@@ -240,14 +247,17 @@ impl App {
             q_down: false,
             step_res: 120,
             step_bars: 1,
+            step_page: 0,
             step_paint: None,
             choke_paint: None,
             vocal: VocalUi::default(),
+            drum: DrumUi::default(),
             vocal_work: Default::default(),
             sent_scale: 0,
             perform: false,
             queued_scene: None,
             chain_pos: 0,
+            chain_drag: None,
             launch_on_bar: false,
             seen_starts: 0,
         };

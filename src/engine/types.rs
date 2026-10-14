@@ -16,6 +16,8 @@ pub enum PadKind {
     /// A stack of vocal takes. To the engine it is an audio pad playing the comp; the takes
     /// and the edits live on the UI side.
     Vocal,
+    /// The native drum synth, playing the patch in [`PadCfg::drum`].
+    Drum,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -122,6 +124,9 @@ pub struct PadCfg {
     pub human_time: f32,
     #[serde(default)]
     pub human_vel: f32,
+    /// The drum synth patch, used while the pad is a drum pad.
+    #[serde(default)]
+    pub drum: crate::drum::DrumParams,
 }
 
 impl Default for PadCfg {
@@ -152,6 +157,7 @@ impl Default for PadCfg {
             synth: SynthParams::default(),
             human_time: 0.0,
             human_vel: 0.0,
+            drum: crate::drum::DrumParams::default(),
         }
     }
 }
@@ -238,6 +244,27 @@ pub struct Note {
     pub len: u32,
     pub pitch: u8,
     pub vel: u8,
+    /// Drum synth macros locked to this step; see [`crate::drum::Locks`].
+    #[serde(default = "no_locks", skip_serializing_if = "unlocked")]
+    pub locks: crate::drum::Locks,
+}
+
+fn no_locks() -> crate::drum::Locks {
+    crate::drum::NO_LOCKS
+}
+
+fn unlocked(l: &crate::drum::Locks) -> bool {
+    *l == crate::drum::NO_LOCKS
+}
+
+impl Note {
+    pub fn new(start: u32, len: u32, pitch: u8, vel: u8) -> Note {
+        Note { start, len, pitch, vel, locks: crate::drum::NO_LOCKS }
+    }
+
+    pub fn has_locks(&self) -> bool {
+        !unlocked(&self.locks)
+    }
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]

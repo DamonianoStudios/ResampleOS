@@ -14,6 +14,7 @@ use crate::fx::{Fx, FxCtx, FxKind, Svf, svf_g};
 use crate::music::{PPQ, TICKS_PER_BAR, swing_tick};
 use crate::sample::{SampleData, hermite};
 use crate::shared::{MASTER, MAX_PADS, NUM_BUSES, Shared, VOCAL, bus_index, f32_load, f32_store};
+use crate::drum::{DrumVoice, Locks, NO_LOCKS};
 use crate::synth::SynthVoice;
 use lufs::Lufs;
 use plugin_rt::{PlugEv, PlugNote};
@@ -25,6 +26,7 @@ use std::sync::atomic::Ordering;
 pub const MAX_BLOCK: usize = 512;
 const NUM_VOICES: usize = 64;
 const NUM_SYNTH_VOICES: usize = 24;
+const NUM_DRUM_VOICES: usize = 48;
 const MAX_HELD: usize = 32;
 
 /// A sample region longer than this is cut by a new hit of the same note, not layered.
@@ -66,6 +68,8 @@ struct Event {
     key: u32,
     offset: u32,
     gate: i64,
+    /// Drum macros locked to the step that fired this.
+    locks: Locks,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -87,6 +91,9 @@ pub struct Engine {
     seq_pads: Vec<u16>,
     voices: [Voice; NUM_VOICES],
     synths: [SynthVoice; NUM_SYNTH_VOICES],
+    drums: [DrumVoice; NUM_DRUM_VOICES],
+    /// Randomness for drum hits.
+    drum_seed: u32,
     age: u64,
     any_solo: bool,
 
@@ -180,6 +187,8 @@ impl Engine {
             seq_pads: Vec::with_capacity(MAX_PADS),
             voices: [Voice::default(); NUM_VOICES],
             synths: [SynthVoice::default(); NUM_SYNTH_VOICES],
+            drums: [DrumVoice::default(); NUM_DRUM_VOICES],
+            drum_seed: 0x2545_f491,
             age: 0,
             any_solo: false,
             buses: [BusCfg::default(); NUM_BUSES],
@@ -208,7 +217,7 @@ impl Engine {
             roll_ticks: PPQ / 4,
             held: [None; MAX_HELD],
             events: Vec::with_capacity(512),
-            touched: Vec::with_capacity(NUM_VOICES + NUM_SYNTH_VOICES),
+            touched: Vec::with_capacity(NUM_VOICES + NUM_SYNTH_VOICES + NUM_DRUM_VOICES),
             samples_run: 0,
             ring_src: 0,
             ring_peak: 0.0,
@@ -255,6 +264,25 @@ impl Engine {
                 v.released = true;
             }
         }
+        for v in self.drums.iter_mut() {
+            if v.active && v.pad == pad {
+                v.killed = true;
+            }
+        }
+    }
+
+    /// Cuts everything sounding in choke group `group`: samples and drum hits alike.
+    fn choke(&mut self, group: u8) {
+        for v in self.voices.iter_mut() {
+            if v.active && self.pads[v.pad as usize].cfg.choke == group {
+                v.killed = true;
+            }
+        }
+        for v in self.drums.iter_mut() {
+            if v.active && self.pads[v.pad as usize].cfg.choke == group {
+                v.killed = true;
+            }
+        }
     }
 
     /// The playing loop has reached its end (or the bar line a queued loop was waiting
@@ -276,7 +304,7 @@ impl Engine {
             let lingers = match p.cfg.kind {
                 PadKind::Midi => true,
                 PadKind::Audio => long,
-                PadKind::Vocal => false,
+                PadKind::Vocal | PadKind::Drum => false,
             };
             if lingers {
                 self.silence_pad(pad);
@@ -361,7 +389,7 @@ impl Engine {
                     if let Some(slot) = self.held.iter_mut().find(|h| h.is_none()) {
                         *slot = Some(Held { pad, key, vel, semis });
                     }
-                    self.trigger(Event { pad, vel, semis, key, offset: 0, gate: -1 }, true);
+                    self.trigger(Event { pad, vel, semis, key, offset: 0, gate: -1, locks: NO_LOCKS }, true);
                 }
             }
             Cmd::PadOff { pad, key } => {
@@ -499,6 +527,9 @@ impl Engine {
                 for v in self.voices.iter_mut() {
                     v.killed = true;
                 }
+                for v in self.drums.iter_mut() {
+                    v.killed = true;
+                }
                 for v in self.synths.iter_mut() {
                     v.released = true;
                 }
@@ -518,6 +549,7 @@ impl Engine {
         }
         match cfg.kind {
             PadKind::Audio | PadKind::Vocal => self.start_voice(ev.pad, ev, 1.0, false, live),
+            PadKind::Drum => self.start_drum(ev, &cfg),
             PadKind::Midi => match cfg.target {
                 MidiTarget::Synth => {
                     self.age += 1;
@@ -587,11 +619,7 @@ impl Engine {
             }
         }
         if cfg.choke > 0 {
-            for v in self.voices.iter_mut() {
-                if v.active && self.pads[v.pad as usize].cfg.choke == cfg.choke {
-                    v.killed = true;
-                }
-            }
+            self.choke(cfg.choke);
         }
         self.age += 1;
         let age = self.age;
@@ -613,6 +641,34 @@ impl Engine {
             age,
             svf: [Svf::default(); 2],
         };
+    }
+
+    /// Starts a drum synth hit: the patch resolved for this velocity and step, tuned by the
+    /// note played, and held to the project scale if the patch asks for it.
+    fn start_drum(&mut self, ev: Event, cfg: &PadCfg) {
+        let p = &cfg.drum;
+        let mut rng = crate::drum::Rng(self.drum_seed | 1);
+        let m = p.resolve(ev.vel, &ev.locks, &mut || rng.next());
+        self.drum_seed = rng.0;
+        let mut hz = p.base_hz(&m) * 2f32.powf((ev.semis + cfg.pitch) / 12.0);
+        if p.key_lock {
+            hz = crate::drum::snap_hz(hz, self.scale);
+        }
+        let cut = crate::drum::sync_ticks(p.sync).map_or(0, |t| (t as f64 / PPQ as f64 * 60.0 / self.bpm as f64 * self.sr as f64) as u32);
+        if cfg.choke > 0 {
+            self.choke(cfg.choke);
+        }
+        // A pad hit again cuts its own last hit at the same pitch, as a drum machine does.
+        for v in self.drums.iter_mut() {
+            if v.active && v.pad == ev.pad && v.semis == ev.semis {
+                v.killed = true;
+            }
+        }
+        self.age += 1;
+        self.drum_seed = self.drum_seed.wrapping_mul(747_796_405).wrapping_add(2_891_336_453);
+        let (age, seed, sr) = (self.age, self.drum_seed, self.sr);
+        let slot = pick(&mut self.drums, |v| v.active, |v| v.age);
+        slot.start(ev.pad, ev.semis, ev.vel, ev.offset, age, p, m, hz, sr, cut, seed);
     }
 
     /// Fills `out` (interleaved, `channels` wide) with the next block of audio.

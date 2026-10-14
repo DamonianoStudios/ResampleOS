@@ -81,6 +81,7 @@ impl Engine {
                             key: h.key,
                             offset,
                             gate: (step * 0.9 / tps) as i64,
+                            locks: crate::drum::NO_LOCKS,
                         });
                     }
                 }
@@ -141,6 +142,7 @@ impl Engine {
                         key: 0x8000_0000 | note.pitch as u32,
                         offset: ((w - a + done) / tps) as u32,
                         gate: (note.len as f64 / tps) as i64,
+                        locks: note.locks,
                     });
                 }
             }
@@ -171,7 +173,7 @@ impl Engine {
         self.shared.lfo_ticks.store(beat_ticks.to_bits(), Ordering::Relaxed);
         self.shared.lfo_secs.store(seconds.to_bits(), Ordering::Relaxed);
         let any_solo = self.any_solo;
-        let Engine { voices, synths, pads, bufs, scratch, touched, shared, .. } = self;
+        let Engine { voices, synths, drums, pads, bufs, scratch, touched, shared, .. } = self;
 
         for v in voices.iter_mut().filter(|v| v.active) {
             let pad = &pads[v.pad as usize];
@@ -295,6 +297,18 @@ impl Engine {
             }
             if v.active {
                 report_level(shared, touched, v.pad, v.level().max(0.05));
+            }
+        }
+
+        for v in drums.iter_mut().filter(|v| v.active) {
+            let cfg = &pads[v.pad as usize].cfg;
+            let audible = !cfg.mute && (!any_solo || cfg.solo);
+            let (gl, gr) = pan_gains(cfg.pan, if audible { cfg.vol } else { 0.0 });
+            let out = &mut bufs[bus_index(cfg.bus)];
+            let (l, r) = out.split_at_mut(1);
+            v.render(&mut l[0][..n], &mut r[0][..n], gl, gr);
+            if v.active {
+                report_level(shared, touched, v.pad, v.loudness().clamp(0.05, 1.0));
             }
         }
     }
@@ -692,6 +706,7 @@ fn humanized_notes(
                     key: 0x8000_0000 | note.pitch as u32,
                     offset: ((at - t0 + done) / tps) as u32,
                     gate: (note.len as f64 / tps) as i64,
+                    locks: note.locks,
                 });
             }
         }

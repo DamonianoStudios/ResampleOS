@@ -121,17 +121,53 @@ pub fn strip(app: &mut App, ui: &mut Ui) {
             ui.label(egui::RichText::new("Shift+click a loop to add it here").small().color(theme::FAINT));
         }
         let playing = app.chain_on && app.playing();
+        let pointer = ui.ctx().pointer_interact_pos();
+        let mut slots = Vec::with_capacity(app.chain.len());
+        let mut released = false;
         for (at, &scene) in app.chain.iter().enumerate() {
             let now = playing && at == app.chain_pos;
-            let (rect, resp) = ui.allocate_exact_size(vec2(22.0, 20.0), Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(vec2(22.0, 20.0), Sense::click_and_drag());
+            slots.push(rect);
+            let dragged = app.chain_drag == Some(at);
             let p = ui.painter();
-            let fill = if now { theme::GREEN } else if resp.hovered() { theme::HOVER } else { theme::RAISED };
-            p.rect_filled(rect, 4.0, fill);
+            let fill = if now { theme::GREEN } else if resp.hovered() || dragged { theme::HOVER } else { theme::RAISED };
+            p.rect_filled(rect, 4.0, if dragged { fill.gamma_multiply(0.45) } else { fill });
             let text = if now { theme::BG } else { theme::TEXT };
             p.text(rect.center(), Align2::CENTER_CENTER, (scene + 1).to_string(), theme::bold(11.0), text);
-            if resp.on_hover_text("Click to remove from the chain").clicked() {
+            if resp.drag_started() {
+                app.chain_drag = Some(at);
+            }
+            released |= resp.drag_stopped();
+            if resp.on_hover_text("Drag to reorder. Click to remove from the chain").clicked() {
                 remove = Some(at);
             }
+        }
+        // While an entry is dragged, the slot nearest the pointer is where it will land.
+        if let (Some(from), Some(pos)) = (app.chain_drag, pointer) {
+            let target = slots
+                .iter()
+                .enumerate()
+                .min_by(|a, b| a.1.center().distance(pos).total_cmp(&b.1.center().distance(pos)))
+                .map(|(i, _)| i);
+            if let Some(to) = target {
+                if to != from {
+                    ui.painter().rect_stroke(slots[to].expand(1.5), 5.0, Stroke::new(2.0, theme::AMBER), StrokeKind::Outside);
+                }
+                if released {
+                    app.chain_move(from, to);
+                }
+            }
+            // The entry follows the pointer while it is carried.
+            if !released && let Some(&scene) = app.chain.get(from) {
+                let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("chain_drag"));
+                let chip = egui::Rect::from_center_size(pos, vec2(22.0, 20.0));
+                let lp = ui.ctx().layer_painter(layer);
+                lp.rect_filled(chip, 4.0, theme::AMBER);
+                lp.text(chip.center(), Align2::CENTER_CENTER, (scene + 1).to_string(), theme::bold(11.0), theme::BG);
+            }
+        }
+        if released || !ui.input(|i| i.pointer.any_down()) {
+            app.chain_drag = None;
         }
         if !app.chain.is_empty() {
             ui.add_space(4.0);

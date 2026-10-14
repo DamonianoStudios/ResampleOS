@@ -72,7 +72,7 @@ fn sequencer_fires_notes_on_time_with_swing() {
     let cfg = PadCfg { kind: PadKind::Midi, ..PadCfg::default() };
     let _ = tx.push(Cmd::SetPadCfg { pad: 5, cfg });
     // One note on the second 16th of a one-bar pattern.
-    let pattern = Pattern { len_ticks: TICKS_PER_BAR, notes: vec![Note { start: 120, len: 60, pitch: 60, vel: 127 }] };
+    let pattern = Pattern { len_ticks: TICKS_PER_BAR, notes: vec![Note::new(120, 60, 60, 127)] };
     let _ = tx.push(Cmd::SetPattern { pad: 5, pattern: Some(Arc::new(pattern)) });
     let _ = tx.push(Cmd::SetBpm(120.0));
     let _ = tx.push(Cmd::SetSwing(0.75));
@@ -121,8 +121,8 @@ fn step_pattern_drives_an_audio_pad() {
     let _ = tx.push(Cmd::SetSample { pad: 2, sample: Some(tone(2400)) });
     // Steps on beats 1 and 3 of a one-bar pattern at 120 BPM: frames 0 and 48000.
     let notes = vec![
-        Note { start: 0, len: 120, pitch: 60, vel: 100 },
-        Note { start: 960, len: 120, pitch: 60, vel: 100 },
+        Note::new(0, 120, 60, 100),
+        Note::new(960, 120, 60, 100),
     ];
     let _ = tx.push(Cmd::SetPattern { pad: 2, pattern: Some(Arc::new(Pattern { len_ticks: TICKS_PER_BAR, notes })) });
     let _ = tx.push(Cmd::SetBpm(120.0));
@@ -184,7 +184,7 @@ fn humanize_moves_notes_off_the_grid_without_losing_any() {
     let click = Arc::new(SampleData::new(vec![1.0; 20], vec![1.0; 20]));
     let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(click) });
     // One note per beat in a one-bar pattern at 120 BPM: 24000 frames apart.
-    let notes = (0..4).map(|b| Note { start: b * PPQ, len: 60, pitch: 60, vel: 100 }).collect();
+    let notes = (0..4).map(|b| Note::new(b * PPQ, 60, 60, 100)).collect();
     let _ = tx.push(Cmd::SetPattern { pad: 0, pattern: Some(Arc::new(Pattern { len_ticks: TICKS_PER_BAR, notes })) });
     let _ = tx.push(Cmd::SetBpm(120.0));
     let _ = tx.push(Cmd::Play(true));
@@ -257,7 +257,7 @@ fn sidechain_swell_opens_a_bus_only_with_its_key() {
 fn queued_loop_takes_over_at_the_end_of_the_playing_one() {
     let (mut e, mut tx, shared) = rig();
     // Pad 0 hard left, pad 1 hard right, each a short hit on the one of a one-bar pattern.
-    let hit = || Some(Arc::new(Pattern { len_ticks: TICKS_PER_BAR, notes: vec![Note { start: 0, len: 60, pitch: 60, vel: 127 }] }));
+    let hit = || Some(Arc::new(Pattern { len_ticks: TICKS_PER_BAR, notes: vec![Note::new(0, 60, 60, 127)] }));
     for pad in 0..2 {
         let cfg = PadCfg { pan: if pad == 0 { -1.0 } else { 1.0 }, ..PadCfg::default() };
         let _ = tx.push(Cmd::SetPadCfg { pad, cfg });
@@ -454,4 +454,75 @@ fn panic_silences_voices_and_effect_tails() {
     let _ = tx.push(Cmd::Panic);
     let out = run(&mut e, 48000);
     assert!(peak(&out[2000..]) < 1e-4, "still sounding: {}", peak(&out[2000..]));
+}
+
+fn drum_pad(tx: &mut Producer<Cmd>, pad: u16, name: &str, choke: u8, pan: f32) {
+    let drum = crate::drum::preset_named(name).expect("factory sound");
+    let _ = tx.push(Cmd::SetPadCfg { pad, cfg: PadCfg { kind: PadKind::Drum, drum, choke, pan, vol: 1.0, ..PadCfg::default() } });
+}
+
+#[test]
+fn a_drum_pad_plays_ends_and_restarts_rather_than_piling_up() {
+    let (mut e, mut tx, _) = rig();
+    drum_pad(&mut tx, 0, "808 Snare", 0, 0.0);
+    let _ = tx.push(Cmd::PadOn { pad: 0, vel: 0.8, semis: 0.0, key: 1 });
+    let out = run(&mut e, 4800);
+    let one = peak(&out);
+    assert!(one > 0.2, "silent: {one}");
+    // Hit it fast: each new hit cuts the last, so the level does not build.
+    for key in 2..10 {
+        let _ = tx.push(Cmd::PadOn { pad: 0, vel: 0.8, semis: 0.0, key });
+        let out = run(&mut e, 960);
+        // Past the few milliseconds the cut hit takes to fade.
+        assert!(peak(&out[600..]) < one * 1.3, "hits piled up: {}", peak(&out[600..]));
+    }
+    let tail = run(&mut e, SR as usize * 2);
+    assert!(peak(&tail[tail.len() - 2000..]) < 1e-4, "never ended");
+}
+
+#[test]
+fn a_closed_hat_chokes_the_open_one() {
+    let (mut e, mut tx, _) = rig();
+    drum_pad(&mut tx, 0, "808 Open Hat", 5, -1.0);
+    drum_pad(&mut tx, 1, "808 Closed Hat", 5, 1.0);
+    let _ = tx.push(Cmd::PadOn { pad: 0, vel: 0.8, semis: 0.0, key: 1 });
+    run(&mut e, 4800);
+    let _ = tx.push(Cmd::PadOn { pad: 1, vel: 0.8, semis: 0.0, key: 2 });
+    let out = run(&mut e, 4800);
+    let (left, _) = sides(&out[2400..]);
+    assert!(left < 1e-3, "open hat still ringing: {left}");
+}
+
+#[test]
+fn a_locked_step_plays_its_own_values() {
+    // The same kick twice in a bar, the second with its decay locked short.
+    let (mut e, mut tx, _) = rig();
+    drum_pad(&mut tx, 0, "808 Boom", 0, 0.0);
+    let mut short = Note::new(TICKS_PER_BAR / 2, 60, 60, 100);
+    short.locks[6] = crate::drum::lock_value(0.05);
+    let notes = vec![Note::new(0, 60, 60, 100), short];
+    let _ = tx.push(Cmd::SetPattern { pad: 0, pattern: Some(Arc::new(Pattern { len_ticks: TICKS_PER_BAR, notes })) });
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    let _ = tx.push(Cmd::Play(true));
+    // At 120 BPM half a bar is 48000 frames. Look 0.3 s after each hit.
+    let out = run(&mut e, 96000);
+    let l: Vec<f32> = out.iter().step_by(2).copied().collect();
+    let long_tail = peak(&l[14400..19200]);
+    let short_tail = peak(&l[48000 + 14400..48000 + 19200]);
+    assert!(long_tail > 0.05 && short_tail < long_tail * 0.2, "long {long_tail} short {short_tail}");
+}
+
+#[test]
+fn a_full_drum_kit_is_cheap_to_run() {
+    let (mut e, mut tx, _) = rig();
+    let kit = &crate::drum::kits()[0];
+    for (i, name) in kit.pads.iter().enumerate() {
+        drum_pad(&mut tx, i as u16, name, 0, 0.0);
+        let _ = tx.push(Cmd::PadOn { pad: i as u16, vel: 1.0, semis: 0.0, key: 1 });
+    }
+    let t = std::time::Instant::now();
+    run(&mut e, SR as usize);
+    let used = t.elapsed().as_secs_f32();
+    // All sixteen at once, for one second of audio, in well under a tenth of a second.
+    assert!(used < 0.1, "a second of a full kit took {used} s");
 }

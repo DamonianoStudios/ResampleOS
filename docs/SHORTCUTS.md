@@ -74,6 +74,14 @@ These apply while the piano roll is showing.
 | `Shift` + pad key | Step the comp to the next take for that sixteenth of the timeline |
 | `Ctrl+B` / `Ctrl+Shift+B` | Bake the comp to a pad, or its phrases to a bank |
 
+## Drum synth pads
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+B` | Bake the hit to a new take |
+| `Ctrl+M` | Mutate: vary the knobs and bake the result to a new take |
+| `Ctrl+Shift+Z` on the first baked take | Back to the live synth, knobs as they were |
+
 ## Views
 
 | Shortcut | Action |
@@ -104,9 +112,13 @@ These apply while the piano roll is showing.
 | Piano roll | `Ctrl` + drag a note | Duplicate: copies stay, the dragged notes move |
 | Choke matrix | Click or drag | Assign pads to a group. Start on a lit cell to clear |
 | Piano roll | Right-click a note | Delete it |
+| Piano roll | `Ctrl` + scroll | Zoom the time axis around the pointer |
+| Piano roll | `Shift` + scroll, or drag the bar under the grid | Move along the pattern. Double-click the bar to see all of it |
 | Loop number | Click | Work on that loop; while playing, line it up to take over at the end of the playing loop |
 | Loop number | `Shift` + click | Add the loop to the chain. Right-click to name or delete it |
 | Chain entry | Click | Remove it from the chain |
+| Chain entry | Drag | Move it to another place in the chain |
+| Step of a drum pad | `Alt` + click | Lock knob values to that step |
 | Take lane | Drag (Comp tool) | Put that stretch of the take in the comp |
 | Vocal clip | Drag (Move tool) | Move in time or to another lane. `Alt` + drag slips the audio inside it |
 | Vocal clip | Click (Cut tool) | Cut in two. Right-click for mute, repeat, delete, use in comp |

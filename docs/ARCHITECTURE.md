@@ -66,6 +66,10 @@ A change of loop has to land exactly on the beat, so the UI does not make it. It
 
 On the UI side the pads always carry the patterns of the loop on screen; the others are kept in `App::scenes` (`src/app/scenes.rs`). Undo snapshots store all patterns with their loops and none on the pads, so moving between loops is not seen as an edit.
 
+### Drum synth
+
+`src/drum.rs` holds the five drum engines. A drum pad's patch is part of its `PadCfg`, so it reaches the engine with the pad's other settings and is covered by undo and project files without anything extra. Each hit resolves the patch once (velocity amounts, random ranges and any values locked to the step, which travel on the `Note` and its `Event`) and starts a `DrumVoice` from a fixed pool. A voice is plain data with every coefficient worked out when it starts, so rendering is a few multiplies per sample. Baking runs the same voice offline. A baked take is matched to its patch by buffer identity in `PadModel::drum_patches`, which is how stepping back to the synth finds the right knobs.
+
 ### Vocal takes
 
 The engine knows almost nothing about vocals. To it, a vocal pad is an audio pad, and what it adds is small:
@@ -101,6 +105,7 @@ Resample is built on the same ring. Arming records a start position; baking copi
 | `plugins.rs` | Plugin instances and editor windows |
 | `scenes.rs` | Loops, the chain, launching |
 | `vocal.rs` | Vocal pads: recording takes, editing them, rendering and baking |
+| `drum.rs` | Drum synth pads: kits, baking hits to takes and back |
 | `roll.rs` | Piano roll selection edits |
 | `history.rs` | Undo and redo |
 | `input.rs` | Keyboard shortcuts and MIDI controller messages |

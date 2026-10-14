@@ -2,7 +2,7 @@
 
 use super::{humanize, knob, theme, toggle};
 use crate::app::{App, PluginTarget, RollDrag, SNAPS};
-use crate::engine::{Cmd, MidiTarget, Note, PadKind, PlayMode};
+use crate::engine::{Cmd, MidiTarget, Note, PadKind};
 use crate::music::{Key, PPQ, TICKS_PER_BAR, is_black_key, note_name, pad_label};
 use crate::synth::SynthEngine;
 use eframe::egui::{self, Align2, Color32, FontId, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, vec2};
@@ -10,12 +10,14 @@ use eframe::egui::{self, Align2, Color32, FontId, PointerButton, Pos2, Rect, Sen
 const KEY_W: f32 = 46.0;
 const ROW_H: f32 = 13.0;
 const VEL_H: f32 = 54.0;
-const HEAD_H: f32 = 14.0;
+const HEAD_H: f32 = 16.0;
+/// The horizontal scroll bar under the velocity lane.
+const SCROLL_H: f32 = 10.0;
 const AUDITION_KEY: u32 = 0x3000;
 
 pub fn draw(app: &mut App, ui: &mut Ui) {
     let sel = app.selected;
-    if app.pads[sel].cfg.kind != PadKind::Midi {
+    if !matches!(app.pads[sel].cfg.kind, PadKind::Midi | PadKind::Drum) {
         ui.add_space(20.0);
         ui.vertical_centered(|ui| {
             ui.label(egui::RichText::new("This is an audio pad").size(16.0).color(theme::DIM));
@@ -41,64 +43,69 @@ fn toolbar(app: &mut App, ui: &mut Ui) {
     let mut pattern_changed = false;
 
     ui.horizontal_wrapped(|ui| {
-        ui.label("Engine");
-        let mut browse = false;
-        let label = match (&app.pads[sel].plugin, cfg.target) {
-            (Some(p), MidiTarget::Plugin) => format!("VST3: {}", p.name),
-            _ => app.midi_target_label(cfg.target),
-        };
-        egui::ComboBox::from_id_salt("roll_target").width(150.0).selected_text(label).show_ui(ui, |ui| {
-            ui.selectable_value(&mut cfg.target, MidiTarget::Synth, "Internal synth");
-            if ui.selectable_label(cfg.target == MidiTarget::Plugin, "VST3 instrument…").clicked() {
-                browse = true;
-            }
-            for i in 0..app.pads.len() {
-                if i != sel && app.pads[i].cfg.kind == PadKind::Audio && app.pads[i].sample().is_some() {
-                    let text = format!("Pad {} {}", pad_label(i), app.pads[i].name);
-                    ui.selectable_value(&mut cfg.target, MidiTarget::Pad(i as u16), text);
+        if cfg.kind == PadKind::Midi {
+            ui.label("Engine");
+            let mut browse = false;
+            let label = match (&app.pads[sel].plugin, cfg.target) {
+                (Some(p), MidiTarget::Plugin) => format!("VST3: {}", p.name),
+                _ => app.midi_target_label(cfg.target),
+            };
+            egui::ComboBox::from_id_salt("roll_target").width(150.0).selected_text(label).show_ui(ui, |ui| {
+                ui.selectable_value(&mut cfg.target, MidiTarget::Synth, "Internal synth");
+                if ui.selectable_label(cfg.target == MidiTarget::Plugin, "VST3 instrument…").clicked() {
+                    browse = true;
                 }
-            }
-        });
-        if browse {
-            app.open_browser(PluginTarget::Pad(sel));
-        }
-        if cfg.target == MidiTarget::Plugin {
-            if app.pads[sel].plugin.is_some() {
-                if ui.button("Open editor").clicked() {
-                    app.open_editor(PluginTarget::Pad(sel));
-                }
-                if ui.button("Change…").on_hover_text("F2").clicked() {
-                    app.open_browser(PluginTarget::Pad(sel));
-                }
-                if ui.button("Remove").clicked() {
-                    app.remove_plugin(PluginTarget::Pad(sel));
-                    cfg.target = MidiTarget::Synth;
-                }
-            } else {
-                ui.label(egui::RichText::new("plugin not loaded").color(theme::RED));
-                if ui.button("Choose…").clicked() {
-                    app.open_browser(PluginTarget::Pad(sel));
-                }
-            }
-        }
-        if cfg.target == MidiTarget::Synth {
-            egui::ComboBox::from_id_salt("roll_engine")
-                .width(96.0)
-                .selected_text(cfg.synth.engine.name())
-                .show_ui(ui, |ui| {
-                    for e in SynthEngine::ALL {
-                        if ui.selectable_value(&mut cfg.synth.engine, e, e.name()).clicked() {
-                            cfg.synth.octave = e.default_octave();
-                        }
+                for i in 0..app.pads.len() {
+                    if i != sel && app.pads[i].cfg.kind == PadKind::Audio && app.pads[i].sample().is_some() {
+                        let text = format!("Pad {} {}", pad_label(i), app.pads[i].name);
+                        ui.selectable_value(&mut cfg.target, MidiTarget::Pad(i as u16), text);
                     }
-                });
-            knob(ui, &mut cfg.synth.decay, "Decay", 0.5, theme::CYAN);
-            knob(ui, &mut cfg.synth.tone, "Tone", 0.5, theme::CYAN);
-            knob(ui, &mut cfg.synth.drive, "Drive", 0.3, theme::CYAN);
-            ui.label("Oct");
-            ui.add(egui::DragValue::new(&mut cfg.synth.octave).range(-4..=4).speed(0.05));
+                }
+            });
+            if browse {
+                app.open_browser(PluginTarget::Pad(sel));
+            }
+            if cfg.target == MidiTarget::Plugin {
+                if app.pads[sel].plugin.is_some() {
+                    if ui.button("Open editor").clicked() {
+                        app.open_editor(PluginTarget::Pad(sel));
+                    }
+                    if ui.button("Change…").on_hover_text("F2").clicked() {
+                        app.open_browser(PluginTarget::Pad(sel));
+                    }
+                    if ui.button("Remove").clicked() {
+                        app.remove_plugin(PluginTarget::Pad(sel));
+                        cfg.target = MidiTarget::Synth;
+                    }
+                } else {
+                    ui.label(egui::RichText::new("plugin not loaded").color(theme::RED));
+                    if ui.button("Choose…").clicked() {
+                        app.open_browser(PluginTarget::Pad(sel));
+                    }
+                }
+            }
+            if cfg.target == MidiTarget::Synth {
+                egui::ComboBox::from_id_salt("roll_engine")
+                    .width(96.0)
+                    .selected_text(cfg.synth.engine.name())
+                    .show_ui(ui, |ui| {
+                        for e in SynthEngine::ALL {
+                            if ui.selectable_value(&mut cfg.synth.engine, e, e.name()).clicked() {
+                                cfg.synth.octave = e.default_octave();
+                            }
+                        }
+                    });
+                knob(ui, &mut cfg.synth.decay, "Decay", 0.5, theme::CYAN);
+                knob(ui, &mut cfg.synth.tone, "Tone", 0.5, theme::CYAN);
+                knob(ui, &mut cfg.synth.drive, "Drive", 0.3, theme::CYAN);
+                ui.label("Oct");
+                ui.add(egui::DragValue::new(&mut cfg.synth.octave).range(-4..=4).speed(0.05));
+            }
+            ui.separator();
+        } else {
+            ui.label(egui::RichText::new("Drum synth: notes tune the drum, middle C is as set").color(theme::LIME));
+            ui.separator();
         }
-        ui.separator();
         ui.label("Bars");
         let mut bars = app.pads[sel].pattern.len_ticks / TICKS_PER_BAR;
         egui::ComboBox::from_id_salt("roll_bars").width(40.0).selected_text(bars.to_string()).show_ui(ui, |ui| {
@@ -124,7 +131,13 @@ fn toolbar(app: &mut App, ui: &mut Ui) {
             .response
             .on_hover_text("Off = free microtiming. Hold Alt while dragging to bypass snap.");
         ui.checkbox(&mut app.roll.scale_lock, "Scale lock").on_hover_text(format!("Grey out and block notes outside {}", app.key.name()));
-        ui.checkbox(&mut app.roll.ghosts, "Ghosts");
+        ui.checkbox(&mut app.roll.ghosts, "Ghosts").on_hover_text("Show the notes of the other MIDI pads in this bank");
+        if toggle(ui, app.roll.follow, "Follow", theme::GREEN)
+            .on_hover_text("Keep the playhead in view while playing when zoomed in. Ctrl + scroll zooms, Shift + scroll moves along the pattern.")
+            .clicked()
+        {
+            app.roll.follow ^= true;
+        }
         humanize(ui, &mut cfg.human_time, &mut cfg.human_vel);
         if toggle(ui, app.roll.rec, "Rec", theme::RED)
             .on_hover_text("While playing, pad and keyboard notes are written into this pattern")
@@ -169,11 +182,14 @@ struct View {
     top: i32,
     /// Pattern length in ticks.
     len: u32,
+    /// The ticks in view: from `t0`, `span` of them.
+    t0: f32,
+    span: f32,
 }
 
 impl View {
     fn x_of(&self, tick: f32) -> f32 {
-        self.grid.left() + tick / self.len as f32 * self.grid.width()
+        self.grid.left() + (tick - self.t0) / self.span * self.grid.width()
     }
 
     fn y_of(&self, pitch: i32) -> f32 {
@@ -181,7 +197,7 @@ impl View {
     }
 
     fn tick_at(&self, x: f32) -> i64 {
-        ((x - self.grid.left()) / self.grid.width() * self.len as f32) as i64
+        (self.t0 + (x - self.grid.left()) / self.grid.width() * self.span) as i64
     }
 
     fn pitch_at(&self, y: f32) -> i32 {
@@ -231,30 +247,34 @@ impl Snap {
 fn grid(app: &mut App, ui: &mut Ui) {
     let sel = app.selected;
     let (rect, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
-    if rect.width() < KEY_W + 40.0 || rect.height() < VEL_H + HEAD_H + 30.0 {
+    if rect.width() < KEY_W + 40.0 || rect.height() < VEL_H + HEAD_H + SCROLL_H + 30.0 {
         return;
     }
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 3.0, theme::BG);
-    if resp.hovered() {
-        let dy = ui.input(|i| i.smooth_scroll_delta.y);
-        app.roll.top_f = (app.roll.top_f + dy / ROW_H).clamp(12.0, 127.0);
-    }
-    let grid = Rect::from_min_max(rect.min + vec2(KEY_W, HEAD_H), rect.max - vec2(0.0, VEL_H));
+    let grid = Rect::from_min_max(rect.min + vec2(KEY_W, HEAD_H), rect.max - vec2(0.0, VEL_H + SCROLL_H));
+    let len = app.pads[sel].pattern.len_ticks.max(1) as f32;
+    let track = Rect::from_min_max(Pos2::new(grid.left(), rect.bottom() - SCROLL_H + 2.0), rect.max - vec2(0.0, 1.0));
+    scroll_and_zoom(app, ui, &resp, grid, track, len);
+    let span = len * app.roll.zoom;
     let v = View {
         rect,
         grid,
-        lane: Rect::from_min_max(Pos2::new(grid.left(), grid.bottom()), rect.max),
+        lane: Rect::from_min_max(Pos2::new(grid.left(), grid.bottom()), Pos2::new(rect.right(), track.top() - 2.0)),
         top: app.roll.top_f.round() as i32,
-        len: app.pads[sel].pattern.len_ticks.max(1),
+        len: len as u32,
+        t0: app.roll.scroll,
+        span,
     };
+    // Everything on the time axis is kept off the keyboard strip when scrolled.
+    let pg = p.with_clip_rect(Rect::from_min_max(Pos2::new(grid.left(), rect.top()), Pos2::new(rect.right(), v.lane.bottom())).intersect(p.clip_rect()));
     let alt = ui.input(|i| i.modifiers.alt);
     let snap = Snap { ticks: if alt { 1 } else { SNAPS[app.roll.snap].1 }, key: app.key, lock: app.roll.scale_lock };
 
     paint_rows(&p, &v, &snap);
-    paint_time_grid(&p, &v, SNAPS[app.roll.snap].1);
+    paint_time_grid(&pg, &v, SNAPS[app.roll.snap].1);
     if app.roll.ghosts {
-        paint_ghosts(app, &p, &v);
+        paint_ghosts(app, &pg, &v);
     }
 
     let (changed, audition) = edit(app, ui, &resp, &v, &snap);
@@ -274,7 +294,63 @@ fn grid(app: &mut App, ui: &mut Ui) {
         app.push_pattern(sel);
     }
 
-    paint_notes(app, &p, &v, resp.interact_pointer_pos());
+    p.hline(rect.x_range(), v.lane.top(), Stroke::new(1.0, theme::LINE));
+    p.text(Pos2::new(rect.left() + 4.0, v.lane.center().y), Align2::LEFT_CENTER, "VEL", FontId::proportional(9.0), theme::DIM);
+    paint_notes(app, &pg, &v, resp.interact_pointer_pos());
+    paint_scrollbar(app, &p, track, len);
+}
+
+/// Mouse wheel and the scroll bar. Plain scroll moves through the pitches, Ctrl + scroll
+/// (or a pinch) zooms the time axis around the pointer, Shift + scroll moves along it. While
+/// playing with Follow on, the view turns the page whenever the playhead reaches its edge.
+fn scroll_and_zoom(app: &mut App, ui: &Ui, resp: &egui::Response, grid: Rect, track: Rect, len: f32) {
+    let roll = &mut app.roll;
+    // Zoomed all the way in, a beat fills the grid.
+    let min_zoom = (PPQ as f32 / len).min(1.0);
+    if resp.hovered() {
+        let (delta, zoom, hover) = ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta(), i.pointer.hover_pos()));
+        roll.top_f = (roll.top_f + delta.y / ROW_H).clamp(12.0, 127.0);
+        let span = len * roll.zoom;
+        if zoom != 1.0 {
+            let at = hover.map_or(0.5, |h| ((h.x - grid.left()) / grid.width()).clamp(0.0, 1.0));
+            let pivot = roll.scroll + at * span;
+            roll.zoom = (roll.zoom / zoom).clamp(min_zoom, 1.0);
+            roll.scroll = pivot - at * len * roll.zoom;
+        }
+        roll.scroll -= delta.x / grid.width() * span;
+    }
+    roll.zoom = roll.zoom.clamp(min_zoom, 1.0);
+
+    // The bar: drag the thumb, click the track to jump, double-click to see everything.
+    let bar = ui.interact(track, egui::Id::new("roll_scroll"), Sense::click_and_drag());
+    let span = len * roll.zoom;
+    if bar.dragged() {
+        roll.scroll += bar.drag_delta().x / track.width() * len;
+    } else if bar.double_clicked() {
+        roll.zoom = 1.0;
+    } else if bar.clicked()
+        && let Some(pos) = bar.interact_pointer_pos()
+    {
+        roll.scroll = (pos.x - track.left()) / track.width() * len - span * 0.5;
+    }
+    if roll.follow && app.shared.playing.load(std::sync::atomic::Ordering::Relaxed) && roll.zoom < 1.0 && !resp.dragged() && !bar.dragged() {
+        let t = app.shared.tick().rem_euclid(len as f64) as f32;
+        if t < roll.scroll || t > roll.scroll + span * 0.95 {
+            roll.scroll = t - span * 0.02;
+        }
+    }
+    roll.scroll = roll.scroll.clamp(0.0, (len - span).max(0.0));
+}
+
+fn paint_scrollbar(app: &App, p: &egui::Painter, track: Rect, len: f32) {
+    p.rect_filled(track, 3.0, theme::WELL);
+    let (a, b) = (app.roll.scroll / len, (app.roll.scroll + len * app.roll.zoom) / len);
+    let thumb = Rect::from_min_max(Pos2::new(track.left() + a * track.width(), track.top()), Pos2::new(track.left() + b * track.width(), track.bottom()));
+    p.rect_filled(thumb, 3.0, if app.roll.zoom < 1.0 { theme::FAINT } else { theme::LINE });
+    if app.playing() {
+        let t = app.shared.tick().rem_euclid(len as f64) as f32 / len;
+        p.vline(track.left() + t * track.width(), track.y_range(), Stroke::new(1.5, theme::GREEN));
+    }
 }
 
 /// Rows and the keyboard strip. Out-of-scale rows are greyed out when the lock is on.
@@ -308,61 +384,60 @@ fn paint_rows(p: &egui::Painter, v: &View, snap: &Snap) {
     }
 }
 
-/// Snap lines where there is room for them, then beats and numbered bars.
+/// Snap lines where there is room for them, then beats and bars, numbered along the top
+/// as bar.beat (1.1, 1.2, 1.3, 1.4, 2.1 ...) when there is room, and by bar when not.
 fn paint_time_grid(p: &egui::Painter, v: &View, snap_ticks: u32) {
-    let px_per_tick = v.grid.width() / v.len as f32;
+    let px_per_tick = v.grid.width() / v.span;
+    let (first, last) = (v.t0.max(0.0) as u32, ((v.t0 + v.span).ceil() as u32).min(v.len));
     if snap_ticks > 1 && snap_ticks as f32 * px_per_tick >= 5.0 {
-        for t in (0..v.len).step_by(snap_ticks as usize) {
+        for t in (first / snap_ticks * snap_ticks..last).step_by(snap_ticks as usize) {
             p.vline(v.x_of(t as f32), v.grid.y_range(), Stroke::new(1.0, Color32::from_rgb(20, 22, 27)));
         }
     }
-    for t in (0..=v.len).step_by(PPQ as usize) {
-        let bar = t % TICKS_PER_BAR == 0;
+    let beat_px = PPQ as f32 * px_per_tick;
+    let beats_per_bar = TICKS_PER_BAR / PPQ;
+    // When even bar numbers would collide, label every second or fourth bar.
+    let bar_every = [1u32, 2, 4, 8].into_iter().find(|n| beat_px * (beats_per_bar * n) as f32 >= 24.0).unwrap_or(16);
+    for t in (first / PPQ * PPQ..=last).step_by(PPQ as usize) {
+        let (bar, beat) = (t / TICKS_PER_BAR, t % TICKS_PER_BAR / PPQ);
         let x = v.x_of(t as f32);
-        let col = if bar { theme::DIM } else { theme::LINE };
-        p.vline(x, v.grid.top() - if bar { HEAD_H } else { 4.0 }..=v.rect.bottom(), Stroke::new(1.0, col));
-        if bar && t < v.len {
-            let number = (t / TICKS_PER_BAR + 1).to_string();
-            p.text(Pos2::new(x + 3.0, v.rect.top() + 1.0), Align2::LEFT_TOP, number, FontId::proportional(9.0), theme::DIM);
+        let downbeat = beat == 0;
+        let col = if downbeat { theme::DIM } else { theme::LINE };
+        p.vline(x, v.grid.top() - if downbeat { HEAD_H } else { 5.0 }..=v.lane.bottom(), Stroke::new(1.0, col));
+        if t >= v.len {
+            continue;
+        }
+        let label = if beat_px >= 26.0 {
+            Some(format!("{}.{}", bar + 1, beat + 1))
+        } else {
+            (downbeat && bar.is_multiple_of(bar_every)).then(|| (bar + 1).to_string())
+        };
+        if let Some(label) = label {
+            let font = if downbeat { theme::bold(10.0) } else { FontId::proportional(9.5) };
+            p.text(Pos2::new(x + 3.0, v.rect.top() + 1.5), Align2::LEFT_TOP, label, font, if downbeat { theme::TEXT } else { theme::DIM });
         }
     }
 }
 
-/// Ghosts: other MIDI pads' notes, and the transients of looping audio pads in this bank.
+/// Ghosts: the other MIDI pads' notes in this bank, faint behind this pad's own.
 fn paint_ghosts(app: &App, p: &egui::Painter, v: &View) {
     let (sel, len, grid) = (app.selected, v.len, v.grid);
     let bank = sel / 16;
-    let tps = app.bpm / 60.0 * PPQ as f32 / app.sr();
     for i in (bank * 16..bank * 16 + 16).filter(|i| *i != sel) {
         let other = &app.pads[i];
-        if other.cfg.kind == PadKind::Midi && other.pattern.len_ticks > 0 {
-            // Repeated across the roll if the other pattern is shorter.
-            for base in (0..len).step_by(other.pattern.len_ticks as usize) {
-                for n in &other.pattern.notes {
-                    let (s, e) = ((base + n.start) as f32, (base + n.start + n.len) as f32);
-                    let y = v.y_of(n.pitch as i32);
-                    if s >= len as f32 || y < grid.top() || y + ROW_H > grid.bottom() {
-                        continue;
-                    }
-                    let r = Rect::from_min_max(Pos2::new(v.x_of(s), y + 2.0), Pos2::new(v.x_of(e.min(len as f32)), y + ROW_H - 2.0));
-                    p.rect_filled(r, 1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 26));
+        if other.cfg.kind != PadKind::Midi || other.pattern.len_ticks == 0 {
+            continue;
+        }
+        // Repeated across the roll if the other pattern is shorter.
+        for base in (0..len).step_by(other.pattern.len_ticks as usize) {
+            for n in &other.pattern.notes {
+                let (s, e) = ((base + n.start) as f32, (base + n.start + n.len) as f32);
+                let y = v.y_of(n.pitch as i32);
+                if s >= len as f32 || y < grid.top() || y + ROW_H > grid.bottom() {
+                    continue;
                 }
-            }
-        } else if other.cfg.mode == PlayMode::Loop
-            && let Some(s) = other.sample()
-        {
-            let olen = (s.len() as f32 * tps).max(1.0);
-            let mut base = 0.0;
-            while base < len as f32 {
-                for &tr in &other.transients {
-                    let t = base + tr as f32 * tps;
-                    if t < len as f32 {
-                        let x = v.x_of(t);
-                        p.vline(x, v.rect.top()..=grid.top(), Stroke::new(1.5, theme::AMBER));
-                        p.vline(x, grid.y_range(), Stroke::new(1.0, Color32::from_rgba_unmultiplied(244, 168, 40, 22)));
-                    }
-                }
-                base += olen;
+                let r = Rect::from_min_max(Pos2::new(v.x_of(s), y + 2.0), Pos2::new(v.x_of(e.min(len as f32)), y + ROW_H - 2.0));
+                p.rect_filled(r, 1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 26));
             }
         }
     }
@@ -370,7 +445,7 @@ fn paint_ghosts(app: &App, p: &egui::Painter, v: &View) {
 
 fn add_note(app: &mut App, v: &View, snap: &Snap, pos: Pos2) -> usize {
     let start = snap.floor(v.tick_at(pos.x)).clamp(0, v.len as i64 - 1) as u32;
-    let note = Note { start, len: app.roll.last_len.max(30), pitch: snap.pitch(v.pitch_at(pos.y)), vel: 100 };
+    let note = Note::new(start, app.roll.last_len.max(30), snap.pitch(v.pitch_at(pos.y)), 100);
     let notes = &mut app.pads[app.selected].pattern.notes;
     notes.push(note);
     notes.len() - 1
@@ -571,8 +646,6 @@ fn paint_notes(app: &App, p: &egui::Painter, v: &View, pointer: Option<Pos2>) {
         p.rect_filled(band, 0.0, Color32::from_white_alpha(18));
         p.rect_stroke(band, 0.0, Stroke::new(1.0, theme::TEXT), StrokeKind::Inside);
     }
-    p.hline(v.rect.x_range(), lane.top(), Stroke::new(1.0, theme::LINE));
-    p.text(Pos2::new(v.rect.left() + 4.0, lane.center().y), Align2::LEFT_CENTER, "VEL", FontId::proportional(9.0), theme::DIM);
     if app.playing() {
         let t = app.shared.tick().rem_euclid(v.len as f64) as f32;
         p.vline(v.x_of(t), v.rect.y_range(), Stroke::new(1.5, theme::GREEN));

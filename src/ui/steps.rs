@@ -10,15 +10,22 @@ use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Str
 
 const LABEL_W: f32 = 132.0;
 const RESOLUTIONS: [(&str, u32); 4] = [("1/8", 240), ("1/16", 120), ("1/16T", 80), ("1/32", 60)];
+/// Bars on screen at once. A longer pattern is shown a page at a time.
+const PAGE_BARS: u32 = 4;
 
 /// Pattern length shown for a bank: whatever its sequenced audio pads already use.
 fn bank_len(app: &App, bank: usize) -> u32 {
     (0..16)
         .map(|i| &app.pads[bank * 16 + i])
-        .filter(|p| p.cfg.kind == PadKind::Audio && !p.pattern.notes.is_empty())
+        .filter(|p| steppable(p.cfg.kind) && !p.pattern.notes.is_empty())
         .map(|p| p.pattern.len_ticks)
         .max()
         .unwrap_or(app.step_bars * TICKS_PER_BAR)
+}
+
+/// Pads whose pattern length the step sequencer sets: the ones it is the editor for.
+fn steppable(kind: PadKind) -> bool {
+    matches!(kind, PadKind::Audio | PadKind::Drum)
 }
 
 pub fn draw(app: &mut App, ui: &mut Ui) {
@@ -30,7 +37,7 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
         ui.label("Bars");
         let mut bars = len / TICKS_PER_BAR;
         egui::ComboBox::from_id_salt("step_bars").width(40.0).selected_text(bars.to_string()).show_ui(ui, |ui| {
-            for b in [1, 2, 4] {
+            for b in 1..=16 {
                 ui.selectable_value(&mut bars, b, b.to_string());
             }
         });
@@ -38,13 +45,30 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
             len = bars * TICKS_PER_BAR;
             app.step_bars = bars;
             for i in bank * 16..bank * 16 + 16 {
-                if app.pads[i].cfg.kind == PadKind::Audio {
+                if steppable(app.pads[i].cfg.kind) {
                     let pat = &mut app.pads[i].pattern;
                     pat.len_ticks = len;
                     pat.notes.retain(|n| n.start < len);
                     app.push_pattern(i);
                 }
             }
+        }
+        // Long patterns are edited four bars at a time.
+        let pages = (len / TICKS_PER_BAR).div_ceil(PAGE_BARS);
+        if pages > 1 {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for page in 0..pages {
+                let (a, b) = (page * PAGE_BARS + 1, ((page + 1) * PAGE_BARS).min(len / TICKS_PER_BAR));
+                let label = if a == b { a.to_string() } else { format!("{a}-{b}") };
+                if super::pill(ui, app.step_page == page, &label).on_hover_text("Bars on screen").clicked() {
+                    app.step_page = page;
+                    app.roll.follow = false;
+                }
+            }
+            if toggle(ui, app.roll.follow, "Follow", theme::GREEN).on_hover_text("Turn the page with the playhead while playing").clicked() {
+                app.roll.follow ^= true;
+            }
+            ui.spacing_mut().item_spacing.x = 7.0;
         }
         ui.label("Grid");
         let name = RESOLUTIONS.iter().find(|r| r.1 == app.step_res).map_or("1/16", |r| r.0);
@@ -77,11 +101,13 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
             }
         }
         ui.label(
-            egui::RichText::new("click / drag: paint steps · right-click: accent, soft, normal · Space: play")
+            egui::RichText::new("click / drag: paint steps · right-click: accent, soft, normal · Alt+click a drum step: lock its knobs · Space: play")
                 .small()
                 .color(theme::DIM),
         );
     });
+
+    lock_strip(app, ui);
 
     let (rect, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
     if rect.width() < LABEL_W + 80.0 || rect.height() < 60.0 {
@@ -90,8 +116,18 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 3.0, theme::BG);
     let res = app.step_res.max(1);
-    let steps = (len / res).max(1) as usize;
-    let row_h = (rect.height() / 16.0).min(30.0);
+    let page_ticks = PAGE_BARS * TICKS_PER_BAR;
+    let pages = len.div_ceil(page_ticks).max(1);
+    if app.roll.follow && app.playing() {
+        app.step_page = (app.shared.tick().rem_euclid(len as f64) as u32) / page_ticks;
+    }
+    app.step_page = app.step_page.min(pages - 1);
+    // The page on screen, in ticks, and its first step.
+    let (from, to) = (app.step_page * page_ticks, ((app.step_page + 1) * page_ticks).min(len));
+    let first = (from / res) as usize;
+    let steps = ((to - from) / res).max(1) as usize;
+    // Room under the grid for the bar numbers.
+    let row_h = ((rect.height() - 16.0) / 16.0).min(30.0);
     let grid = Rect::from_min_size(rect.min + vec2(LABEL_W, 0.0), vec2(rect.width() - LABEL_W, row_h * 16.0));
     let cell_w = grid.width() / steps as f32;
     let per_beat = (PPQ / res).max(1) as usize;
@@ -109,9 +145,12 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
         let y = rect.top() + row as f32 * row_h;
         let pad = &app.pads[idx];
         let empty = pad.is_empty();
-        let midi = pad.cfg.kind == PadKind::Midi;
         let level = f32_load(&app.shared.pad_level[idx]);
-        let accent = if midi { theme::CYAN } else { theme::AMBER };
+        let accent = match pad.cfg.kind {
+            PadKind::Midi => theme::CYAN,
+            PadKind::Drum => theme::LIME,
+            _ => theme::AMBER,
+        };
 
         let label = Rect::from_min_size(Pos2::new(rect.left(), y), vec2(LABEL_W - 4.0, row_h - 2.0));
         let lab_col = if idx == app.selected { theme::RAISED } else { theme::PANEL };
@@ -128,9 +167,10 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
         for s in 0..steps {
             let cell = Rect::from_min_size(Pos2::new(grid.left() + s as f32 * cell_w, y), vec2(cell_w, row_h))
                 .shrink2(vec2((cell_w * 0.08).clamp(0.5, 2.0), 2.0));
-            let (lo, hi) = (s as u32 * res, (s as u32 + 1) * res);
+            let step = first + s;
+            let (lo, hi) = (step as u32 * res, (step as u32 + 1) * res);
             let vel = pad.pattern.notes.iter().filter(|n| n.start >= lo && n.start < hi).map(|n| n.vel).max();
-            let beat = (s / per_beat).is_multiple_of(2);
+            let beat = (step / per_beat).is_multiple_of(2);
             let base = if beat { Color32::from_rgb(34, 38, 47) } else { Color32::from_rgb(26, 29, 36) };
             let fill = match vel {
                 Some(v) => accent.gamma_multiply(0.4 + 0.6 * v as f32 / 127.0),
@@ -138,16 +178,27 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
                 None => base,
             };
             p.rect_filled(cell, 2.0, fill);
-            if play_step == Some(s) {
+            if play_step == Some(step) {
                 p.rect_stroke(cell, 2.0, Stroke::new(1.5, theme::GREEN), StrokeKind::Inside);
+            }
+            // A dot on a step with knobs locked to it, and a ring on the one being edited.
+            if pad.pattern.notes.iter().any(|n| n.start >= lo && n.start < hi && n.has_locks()) {
+                p.circle_filled(cell.right_top() + vec2(-4.0, 4.0), 2.2, theme::TEXT);
+            }
+            if app.drum.lock_step == Some((idx, lo, hi)) {
+                p.rect_stroke(cell.expand(1.0), 3.0, Stroke::new(2.0, theme::TEXT), StrokeKind::Outside);
             }
         }
     }
-    // Bar lines.
-    let per_bar = (TICKS_PER_BAR / res) as usize;
-    for b in 1..steps.div_ceil(per_bar.max(1)) {
+    // Bar lines, with the bar's number above each.
+    let per_bar = (TICKS_PER_BAR / res).max(1) as usize;
+    for b in 0..steps.div_ceil(per_bar) {
         let x = grid.left() + (b * per_bar) as f32 * cell_w;
-        p.vline(x, grid.y_range(), Stroke::new(1.0, theme::DIM));
+        if b > 0 {
+            p.vline(x, grid.y_range(), Stroke::new(1.0, theme::DIM));
+        }
+        let bar = first / per_bar + b + 1;
+        p.text(Pos2::new(x + 3.0, grid.bottom() + 2.0), Align2::LEFT_TOP, bar.to_string(), theme::bold(10.0), theme::DIM);
     }
 
     // ---- Editing.
@@ -162,23 +213,34 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
         }
         return;
     }
-    let s = (((pos.x - grid.left()) / cell_w) as usize).min(steps - 1);
+    let s = first + (((pos.x - grid.left()) / cell_w) as usize).min(steps - 1);
     let (lo, hi) = (s as u32 * res, (s as u32 + 1) * res);
     let in_cell = |n: &Note| n.start >= lo && n.start < hi;
     let on = app.pads[idx].pattern.notes.iter().any(in_cell);
 
+    // Alt+click on a drum pad's step picks it for the lock strip above the grid.
+    let alt = ui.input(|i| i.modifiers.alt);
+    if pressed && resp.contains_pointer() && alt {
+        if on && app.pads[idx].cfg.kind == PadKind::Drum {
+            app.drum.lock_step = Some((idx, lo, hi));
+            app.select(idx);
+        } else {
+            app.drum.lock_step = None;
+        }
+        return;
+    }
     if pressed && resp.contains_pointer() {
         app.step_paint = Some(!on);
         app.select(idx);
     }
     if let (true, Some(paint)) = (down, app.step_paint)
         && paint != on {
-            if app.pads[idx].cfg.kind == PadKind::Audio {
+            if steppable(app.pads[idx].cfg.kind) {
                 app.pads[idx].pattern.len_ticks = len;
             }
             let pat = &mut app.pads[idx].pattern;
             if paint {
-                pat.notes.push(Note { start: lo, len: res.min(120), pitch: 60, vel: 100 });
+                pat.notes.push(Note::new(lo, res.min(120), 60, 100));
                 // Hear the step as it goes in, unless the transport is already playing it.
                 if !app.playing() {
                     app.send(crate::engine::Cmd::PadOn { pad: idx as u16, vel: 0.8, semis: 0.0, key: 0x3100 });
@@ -198,5 +260,54 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
             };
         }
         app.push_pattern(idx);
+    }
+}
+
+/// Knobs for the step picked with Alt+click: turning one locks that macro to that step
+/// only. Double-click a knob to let it follow the pad again.
+fn lock_strip(app: &mut App, ui: &mut Ui) {
+    let Some((pad, lo, hi)) = app.drum.lock_step else { return };
+    let still_there = app.pads.get(pad).is_some_and(|p| p.cfg.kind == PadKind::Drum && p.pattern.notes.iter().any(|n| n.start >= lo && n.start < hi));
+    if !still_there {
+        app.drum.lock_step = None;
+        return;
+    }
+    let params = app.pads[pad].cfg.drum;
+    let locks = app.pads[pad].pattern.notes.iter().find(|n| n.start >= lo && n.start < hi).map_or(crate::drum::NO_LOCKS, |n| n.locks);
+    let names = params.engine.macros();
+    let mut set = None;
+    let mut done = false;
+    let mut clear = false;
+    ui.horizontal(|ui| {
+        theme::title(ui, "STEP LOCK", theme::LIME);
+        let step = lo / app.step_res.max(1) + 1;
+        ui.label(egui::RichText::new(format!("{} {} · step {step}", pad_label(pad), app.pads[pad].name)).color(theme::DIM));
+        ui.add_space(6.0);
+        for k in 0..8 {
+            let locked = locks[k] != crate::drum::NO_LOCK;
+            let mut v = if locked { locks[k] as f32 / 200.0 } else { params.m[k] };
+            let r = super::knob_sized(ui, &mut v, names[k], params.m[k], if locked { theme::LIME } else { theme::FAINT }, 9.0)
+                .on_hover_text(if locked { "Locked to this step. Double-click to follow the pad again." } else { "Following the pad. Turn to lock a value to this step." });
+            if r.double_clicked() {
+                set = Some((k, None));
+            } else if r.dragged() {
+                set = Some((k, Some(v)));
+            }
+        }
+        if ui.button("Clear").on_hover_text("Unlock every knob on this step").clicked() {
+            clear = true;
+        }
+        if ui.button("Done").clicked() {
+            done = true;
+        }
+    });
+    if let Some((k, v)) = set {
+        app.set_step_lock(pad, (lo, hi), k, v);
+    }
+    if clear {
+        app.clear_step_locks(pad, (lo, hi));
+    }
+    if done {
+        app.drum.lock_step = None;
     }
 }

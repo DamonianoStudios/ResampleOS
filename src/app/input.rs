@@ -78,6 +78,8 @@ impl App {
                     Key::D if self.vocal_context() => self.vocal_duplicate_selected(self.selected),
                     Key::B if self.vocal_context() && shift => self.vocal_bake_to_bank(self.selected),
                     Key::B if self.vocal_context() => self.vocal_bake_to_pad(self.selected),
+                    Key::B if self.is_drum(self.selected) => self.drum_bake(self.selected, false),
+                    Key::M if self.is_drum(self.selected) => self.drum_bake(self.selected, true),
                     Key::A if self.tab == Tab::Roll => self.roll_select_all(),
                     Key::D if self.roll_has_selection() => self.roll_duplicate(),
                     Key::C => self.clipboard = Some(self.selected),

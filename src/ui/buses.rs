@@ -1,11 +1,13 @@
-//! Zone C: four performance buses, the vocal bus and the master, three effect slots each.
+//! Zone C: four performance buses, the vocal bus and the master, laid out like channels of
+//! a mixing console: three effect slots, the output under them, and a long fader with the
+//! bus meter at the right.
 
-use super::{fader, knob, knob_sized, meter, theme, toggle};
+use super::{channel_fader, fader, knob, knob_sized, theme, toggle};
 use crate::app::{App, PluginTarget};
 use crate::engine::SlotCfg;
 use crate::fx::FxKind;
 use crate::shared::{MASTER, NUM_BUSES, VOCAL, bus_label, f32_load};
-use eframe::egui::{self, Rect, Sense, Ui, vec2};
+use eframe::egui::{self, Pos2, Rect, Sense, Ui, vec2};
 
 pub fn draw(app: &mut App, ui: &mut Ui) {
     let full = ui.available_rect_before_wrap();
@@ -15,9 +17,12 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
         let rect = Rect::from_min_size(full.min + vec2(b as f32 * (w + gap), 0.0), vec2(w, full.height()));
         let accent = accent_of(b);
         let border = (app.focus_bus == b).then_some(accent);
-        theme::card_in(ui, rect, border, |ui| strip(app, ui, b));
+        theme::card_with_margin(ui, rect, border, vec2(8.0, 10.0), |ui| strip(app, ui, b));
     }
 }
+
+/// Width of the fader and meter column at the right of each strip.
+const FADER_W: f32 = 28.0;
 
 fn accent_of(b: usize) -> eframe::egui::Color32 {
     match b {
@@ -55,19 +60,20 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
             super::pan_box(ui, &mut cfg.pan, accent, width);
         });
 
-        ui.horizontal(|ui| {
-            // Level meter down the left edge.
-            let (mrect, _) = ui.allocate_exact_size(vec2(12.0, 286.0), Sense::hover());
-            let p = ui.painter_at(mrect);
-            let half = (mrect.width() - 2.0) * 0.5;
-            meter(&p, Rect::from_min_size(mrect.min, vec2(half, mrect.height())), f32_load(&app.shared.bus_peak[b * 2]));
-            meter(
-                &p,
-                Rect::from_min_size(mrect.min + vec2(half + 2.0, 0.0), vec2(half, mrect.height())),
-                f32_load(&app.shared.bus_peak[b * 2 + 1]),
-            );
-
-            ui.vertical(|ui| {
+        {
+            // Effects on the left, the output under them; fader and meter on the right. The
+            // two get fixed shares of the strip, so effects that run wide are cut off at
+            // their edge rather than pushing the fader out of the strip.
+            let full = ui.available_rect_before_wrap();
+            let height = full.height();
+            let fader_rect = Rect::from_min_max(Pos2::new(full.right() - FADER_W, full.top()), full.max);
+            let left = Rect::from_min_max(full.min, Pos2::new(fader_rect.left() - 5.0, full.bottom()));
+            let width = left.width();
+            ui.allocate_rect(full, Sense::hover());
+            let mut column = ui.new_child(egui::UiBuilder::new().max_rect(left).layout(egui::Layout::top_down(egui::Align::Min)));
+            column.set_clip_rect(left.expand2(vec2(1.0, 4.0)).intersect(ui.clip_rect()));
+            {
+                let ui = &mut column;
                 for s in 0..3 {
                     let slot = &mut cfg.slots[s];
                     let slot_focus = focused && app.focus_slot == s;
@@ -75,7 +81,8 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
                         ui.checkbox(&mut slot.on, "");
                         let mut kind = slot.kind;
                         egui::ComboBox::from_id_salt(("fx_kind", b, s))
-                            .width((ui.available_width() - 8.0).clamp(70.0, 98.0))
+                            // The width given is the text's; the arrow and padding come on top.
+                            .width((ui.available_width() - 30.0).clamp(50.0, 98.0))
                             .height(420.0)
                             .selected_text(
                                 egui::RichText::new(kind.name()).color(if slot_focus { accent } else { theme::TEXT }),
@@ -123,11 +130,22 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
                             // Knobs take what width the strip has: six strips share the row,
                             // and an effect with sliders fits five controls where three go.
                             let sliders = slot.kind.slider_names();
-                            let gap = if sliders.is_some() { 3.0 } else { ui.spacing().item_spacing.x.min(6.0) };
+                            // The column's own width, not what is left of it: a row that ran
+                            // wide earlier must not make the knobs think there is more room.
+                            let room = width;
+                            let gap = if sliders.is_some() { 2.0 } else if room < 120.0 { 3.0 } else { 6.0 };
                             ui.spacing_mut().item_spacing.x = gap;
                             let faders = if sliders.is_some() { 2.0 * (16.0 + gap) } else { 0.0 };
-                            let each = (ui.available_width() - faders - gap * 2.0) / 3.0;
-                            let radius = ((each - 20.0) / 2.0).clamp(7.5, if sliders.is_some() { 8.5 } else { 13.0 });
+                            let each = (room - faders - gap * 2.0) / 3.0;
+                            // Below the standard size a knob gives up some of the room kept for
+                            // its label (see `knob_sized`), which is what lets three of them
+                            // and the EQ's two faders share a narrow strip.
+                            let full_size = (each - 20.0) / 2.0;
+                            let radius = if full_size >= 7.5 {
+                                full_size.min(if sliders.is_some() { 8.5 } else { 13.0 })
+                            } else {
+                                ((each - 12.0) / 2.0).clamp(6.0, 7.4)
+                            };
                             let mut touched = false;
                             for k in 0..3 {
                                 let r = knob_sized(ui, &mut slot.params[k], names[k], defaults[k], col, radius);
@@ -154,14 +172,15 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
                         ui.add_space(10.0);
                     }
                 }
-                ui.horizontal(|ui| {
-                    // The output menu keeps its width; the fader takes the rest.
-                    let menu = if b != MASTER { 72.0 } else { 0.0 };
-                    ui.spacing_mut().slider_width = (ui.available_width() - menu - 14.0).clamp(36.0, 76.0);
-                    ui.add(egui::Slider::new(&mut cfg.level, 0.0..=1.5).show_value(false)).on_hover_text("Bus level");
-                    if b != MASTER {
+                if b != MASTER {
+                    ui.add_space(4.0);
+                    // Centred under the effects by hand: a drop-down does not follow a
+                    // centred layout. Its arrow and padding add about 10 points.
+                    let menu = (width - 34.0).clamp(50.0, 84.0);
+                    ui.horizontal(|ui| {
+                        ui.add_space(((width - menu - 10.0) * 0.5).max(0.0));
                         egui::ComboBox::from_id_salt(("bus_out", b))
-                            .width(64.0)
+                            .width(menu)
                             .selected_text(out_name(cfg.out, b))
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(&mut cfg.out, 0, "to Master");
@@ -169,12 +188,16 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
                                 for o in b + 2..=MASTER {
                                     ui.selectable_value(&mut cfg.out, o as u8, format!("to {}", bus_label(o - 1)));
                                 }
-                            });
-                    }
-
-                });
-            });
-        });
+                            })
+                            .response
+                            .on_hover_text("Where this bus goes");
+                    });
+                }
+            }
+            let peaks = (f32_load(&app.shared.bus_peak[b * 2]), f32_load(&app.shared.bus_peak[b * 2 + 1]));
+            let mut fader_ui = ui.new_child(egui::UiBuilder::new().max_rect(fader_rect));
+            channel_fader(&mut fader_ui, &mut cfg.level, peaks, vec2(FADER_W, height - 2.0), accent);
+        }
     }
 
     if cfg != before {

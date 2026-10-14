@@ -2,6 +2,7 @@
 
 mod browser;
 mod buses;
+mod drum;
 mod footer;
 mod inspector;
 mod modwarp;
@@ -17,7 +18,7 @@ mod widgets;
 mod windows;
 
 pub use theme::install as install_theme;
-pub(crate) use widgets::{db, fader, humanize, knob, knob_sized, meter, pan_box, pill, tag, toggle, transport_button};
+pub(crate) use widgets::{channel_fader, db, fader, humanize, knob, knob_sized, pan_box, pill, tag, toggle, transport_button};
 
 use crate::app::App;
 use eframe::egui::{self, Ui};

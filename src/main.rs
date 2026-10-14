@@ -4,6 +4,7 @@
 mod analysis;
 mod app;
 mod audio_io;
+mod drum;
 mod engine;
 mod fx;
 mod midi;

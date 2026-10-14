@@ -215,6 +215,8 @@ fn help(app: &mut App, ctx: &egui::Context) {
             ("Backspace", "Stop the selected pad's playback"),
             ("G", "Step sequencer for the current bank"),
             ("P", "Perform mode: pad keys and controller pads launch loops"),
+            ("Ctrl + B / Ctrl + M", "Drum pad: bake the hit to a take / mutate and bake"),
+            ("Alt + click a drum step", "Lock knob values to that step"),
             ("Shift + R", "Vocal pad: arm, then Space records a take each time round the loop"),
             ("Vocal tab: C / D / X", "Comp, Move and Cut tools. G steps the snap grid"),
             ("Vocal tab: M, Backspace, Ctrl + D", "Mute, delete or repeat the selected clip"),

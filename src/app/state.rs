@@ -23,6 +23,7 @@ pub enum Tab {
     Steps,
     Mod,
     Vocal,
+    Drum,
 }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -94,6 +95,12 @@ pub struct RollUi {
     pub sel_pad: usize,
     /// Where a rubber-band selection started.
     pub marquee: Option<egui::Pos2>,
+    /// How much of the pattern is in view, 1 = all of it.
+    pub zoom: f32,
+    /// First tick in view when zoomed in.
+    pub scroll: f32,
+    /// Keep the playhead in view while playing. Shared with the step sequencer's pages.
+    pub follow: bool,
 }
 
 pub struct RollDrag {

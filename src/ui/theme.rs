@@ -38,6 +38,9 @@ pub const PURPLE: Color32 = Color32::from_rgb(168, 118, 255);
 /// Everything vocal: the vocal bus, vocal pads, takes.
 pub const MAGENTA: Color32 = Color32::from_rgb(255, 92, 196);
 pub const MAGENTA_DIM: Color32 = Color32::from_rgb(138, 44, 104);
+/// The drum synth.
+pub const LIME: Color32 = Color32::from_rgb(178, 228, 64);
+pub const LIME_DIM: Color32 = Color32::from_rgb(92, 120, 34);
 
 /// Linear blend between two colours, `t` in 0..1.
 pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
@@ -191,11 +194,16 @@ pub fn install(ctx: &egui::Context) {
 /// Draws a card filling exactly `rect` and lays `add` out inside it. Zones use this
 /// rather than a growing frame so a card can never spill over its neighbours.
 pub fn card_in(ui: &mut Ui, rect: Rect, accent: Option<Color32>, add: impl FnOnce(&mut Ui)) {
+    card_with_margin(ui, rect, accent, vec2(12.0, 10.0), add);
+}
+
+/// A card with its own inner margin, for narrow cards that need every point of width.
+pub fn card_with_margin(ui: &mut Ui, rect: Rect, accent: Option<Color32>, margin: egui::Vec2, add: impl FnOnce(&mut Ui)) {
     ui.allocate_rect(rect, egui::Sense::hover());
     let p = ui.painter();
     p.rect_filled(rect, 10.0, PANEL);
     p.rect_stroke(rect, 10.0, Stroke::new(1.0, accent.unwrap_or(Color32::BLACK)), StrokeKind::Inside);
-    let inner = rect.shrink2(vec2(12.0, 10.0));
+    let inner = rect.shrink2(margin);
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
     child.set_clip_rect(rect.shrink(1.0).intersect(ui.clip_rect()));
     add(&mut child);

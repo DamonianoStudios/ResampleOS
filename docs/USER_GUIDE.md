@@ -44,6 +44,8 @@ A pad is one of two kinds:
 
 Click a pad or press its key to play it. The pad's settings are in the row under the inspector's tabs: volume, pan, mute, solo, Stop, bus, choke group, play mode and reverse. Drag the pan box sideways (`Shift` for fine) and double-click it to centre.
 
+When the pad zone is taller than it is wide (a large or full-screen window), the matrix moves to the top and the **stereo meters** go beneath it, for whatever **CAPTURE** is set to (the master unless you change it). On the left is a stereo image: a mono sound is a vertical line, a wide one spreads sideways, and one leaning to a side tilts towards it. On the right, **Correlation** reads +1 for mono, around 0 for very wide and below 0 when the two sides cancel, which is what thins out or disappears when the mix is played in mono. **Width** and **Balance** show how much of the sound is in the sides and which way it leans.
+
 Hitting a pad again while a long sample (over a second) is still playing restarts it: the copy already playing is faded out, so repeated hits do not pile up. Short hits are left to overlap, and a different note of the same pad (Chromatic mode, a MIDI pad playing it) still layers, so chords work.
 
 **Stop All** in the top bar (`Shift+Space`) stops the transport and silences everything at once, including the tails of the built-in effects. A hosted plugin's own tail (a VST reverb, say) is left to the plugin.
@@ -162,13 +164,17 @@ Select an empty pad and press `Tab`, or make a pad a MIDI pad from its right-cli
 - The lane at the bottom sets velocity.
 - **Snap** sets the grid. Off gives free placement; holding `Alt` ignores the grid for one drag.
 - **Scale lock** greys out notes outside the project scale and keeps new notes on it.
-- **Ghosts** shows other MIDI pads' notes in the bank, and the transients of looping audio pads, as a guide.
+- **Ghosts** shows the other MIDI pads' notes in the bank, faintly, as a guide.
+- The numbers along the top count bars and beats: 1.1, 1.2, 1.3, 1.4, 2.1 and so on. Zoomed far out they count bars only.
+- `Ctrl`+scroll (or a pinch) zooms the time axis around the pointer, down to one beat across the grid. `Shift`+scroll moves along the pattern, and so does dragging the bar under the velocity lane; click the bar to jump, double-click it to see the whole pattern again. Plain scroll moves up and down the keyboard.
+- **Follow**, while zoomed in and playing, turns the page whenever the playhead reaches the edge of the view. Turn it off to stay where you are while the pattern plays.
 - **Rec** writes notes you play into the pattern while the transport runs.
 
 ### Loops, the chain and perform mode
 
 A project holds up to sixteen **loops**. Each is its own set of patterns over the same pads, 1 to 16 bars long, so a loop can be an intro, a verse, a variation or a breakdown. The **LOOPS** row at the top of the pad zone shows them.
 
+- Drag an entry of the chain to reorder it: it lands where the outlined slot is. Click an entry to remove it.
 - Click a number to work on that loop. The piano roll and step sequencer always show the loop that is selected, which is also the loop that plays.
 - **+** adds a loop as a copy of the current one, ready to be varied. `Shift`+click **+** for an empty one. Right-click a loop to name or delete it.
 - **Bars** sets the loop's length. Patterns shorter than the loop repeat inside it, and the loop grows by itself if you make a pattern longer.
@@ -181,7 +187,7 @@ The **chain** plays loops one after another. `Shift`+click loops in the order yo
 
 ## Step sequencer
 
-Press `G`. Each row is a pad of the current bank; each column is a step. Click or drag to paint, right-click a step to cycle normal, accent and soft. **Bars** and **Grid** set the length and resolution. The steps are the same patterns the piano roll edits, so a pad can be worked on in either.
+Press `G`. Each row is a pad of the current bank; each column is a step. Click or drag to paint, right-click a step to cycle normal, accent and soft. **Bars** (1 to 16) and **Grid** set the length and resolution. A pattern longer than four bars is shown four bars at a time: the buttons beside **Bars** pick which four, and with **Follow** on the page turns with the playhead while playing (picking a page by hand turns Follow off). The steps are the same patterns the piano roll edits, so a pad can be worked on in either.
 
 ### Humanize
 
@@ -193,7 +199,7 @@ With **Roll** on (`T`), a held pad retriggers at the rate chosen beside it.
 
 ## Buses and effects
 
-Each pad is sent either straight to the master (**Thru**), to one of four buses, or to the vocal bus, **Bus V**. A bus has three effect slots, a level, a pan (the box beside **SC**: drag sideways, double-click to centre) and an output that can be the master or a later bus. Bus V comes after Bus 1 to 4, so any of them can feed it.
+Each pad is sent either straight to the master (**Thru**), to one of four buses, or to the vocal bus, **Bus V**. Each bus is laid out like a console channel: three effect slots, the output under them (the master or a later bus), and a long level fader with the bus's meter at the right (drag it, `Shift` for fine, double-click for 0 dB). The pan is the box beside **SC**: drag sideways, double-click to centre. Bus V comes after Bus 1 to 4, so any of them can feed it.
 
 | Effect | Controls |
 | --- | --- |
@@ -224,6 +230,46 @@ Drag a knob to change it, hold `Shift` for fine control, double-click to reset. 
 - **Depth** sets how far the level moves, and **Release** how quickly it recovers.
 
 The SC button is lit purple when ducking and green when swelling.
+
+## Drum synth
+
+A **drum synth pad** makes its sound as it plays instead of playing a sample. Turn the knobs while a pattern runs and you hear the change on the next hit; when a sound is right, bake it into an ordinary sample with one key.
+
+- **One pad:** right-click an empty pad, **Make drum synth pad**, and pick a sound. Or click **Drum** at the top right of the inspector.
+- **A whole kit:** right-click a bank tab, **Load drum kit**, and pick one: 808 Analog, 909 Analog, Boom Bap, Lo-Fi Dust, FM Perc, Physical / Modal or Glitch / Noise. The kit goes on that bank if it is empty, otherwise on the next empty bank. Its closed and open hats share a choke group, so the closed hat cuts the open one off.
+
+Drum pads are lime. Instead of a waveform, the pad shows what kind of drum it is and how long it rings; zoomed out to 16×16 it shows just the drum.
+
+### The Drum tab
+
+Selecting a drum pad opens the **Drum** tab.
+
+- **Engine** picks one of five:
+
+| Engine | What it is | Good for | Macros |
+| --- | --- | --- | --- |
+| Sub / Kick | A sine whose pitch sweeps down, with a click, a sub-octave and drive | 808 booms, punchy 909 kicks, distorted rumble | Pitch, Sweep, Sweep Time, Click, Drive, Sub, Decay, Tone |
+| Snare / Clap | A two-tone body, filtered noise for the wires, and a burst generator for claps | Snares, rims, claps | Body Pitch, Wires, Snap, Clap Spread (from snare to clap), Density (how many bursts), Box, Decay, Drive |
+| Metallic / Hat | Six square waves at inharmonic ratios, FM between them, a resonant band and a steep high-pass | Closed and open hats, rides, cowbells, shakers | Pitch, Inharm, FM, Ring, HPF, Closed (decay), Open (decay), Crisp. **Closed** / **Open** chooses which decay rings |
+| FM / Tom / Perc | Two-operator FM with feedback, a wavefolder and a low-pass gate | Toms, congas, bongos, woody clicks, zaps | Pitch, Ratio, FM Depth, FM Decay, Fold, Feedback, Decay, LPG |
+| Modal | A strike of noise ringing eight tuned resonators, from skin and wood to metal bar | Hand drums, woodblocks, claves, tuned and metallic percussion | Exciter, Material, Pitch, Harmonics, Damping, Position, Decay, Width |
+
+- **Sounds…** loads any of the 32 factory sounds onto the pad.
+- **Key lock** tunes the drum to the nearest note of the project key, and **Tail** cuts its tail after a note value at the project tempo (a sixteenth up to a bar), so a long kick never runs into the next one.
+- The display shows the hit as it sounds now. Its two handles each move two macros at once (named beside them): drag the orange one to shape the body, the blue one to shape the attack.
+- **MACROS** are the eight knobs. **Value**, **Velocity** and **Random** choose what turning them sets: the knob itself, how far a hard hit pushes it (the blue ring; normal velocity moves nothing), or how far it wanders at random on every hit (the purple ring).
+- Notes in the piano roll tune a drum pad: middle C plays it as set.
+
+### Baking and takes
+
+- **To take** (`Ctrl+B`) renders the hit to a sample, down to -80 dB, and makes it a new take on the pad, which then plays the sample like any audio pad: crop it, reverse it, chop it. Tick **FX** to print the pad's bus effects in (the pad is then routed straight to the master).
+- **Mutate** (`Ctrl+M`) nudges every knob a little and bakes the result, so a few presses give you a row of variations to audition.
+- A baked take remembers the synth that made it. **Edit synth** on the Waveform tab, or stepping back past the first take (`Ctrl+Shift+Z`), brings the synth back with its knobs exactly as they were. Stepping forward (`Ctrl+Shift+Y`) from the synth goes back to the takes.
+- The **TAKES** row on the Drum tab lists them; a dot marks the ones the synth made.
+
+### Step locks
+
+In the step sequencer, `Alt`+click a step of a drum pad. A row of its knobs appears above the grid: turning one locks that value to that step only, so the hat on step 7 can ring longer or the tom on step 12 can sit higher. Steps with locks have a dot. Double-click a knob to let it follow the pad again; **Clear** unlocks the whole step and **Done** closes the row.
 
 ## Vocals
 

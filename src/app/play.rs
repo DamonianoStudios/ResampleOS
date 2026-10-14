@@ -111,7 +111,13 @@ impl App {
             // A vocal pad shows its takes; any other pad has no use for that tab.
             if self.is_vocal(pad) {
                 self.tab = Tab::Vocal;
-            } else if self.tab == Tab::Vocal {
+            } else if self.is_drum(pad) {
+                // A drum pad opens on its synth, unless a tab that edits patterns is up
+                // (the step sequencer selects pads as you paint).
+                if matches!(self.tab, Tab::Wave | Tab::Vocal) {
+                    self.tab = Tab::Drum;
+                }
+            } else if matches!(self.tab, Tab::Vocal | Tab::Drum) {
                 self.tab = Tab::Wave;
             }
         }
@@ -140,12 +146,7 @@ impl App {
         let len_ticks = self.pads[p.pad].pattern.len_ticks.max(1) as f64;
         let len = (self.shared.tick() - p.start).max(30.0);
         let start = ((p.start / snap).round() * snap).rem_euclid(len_ticks);
-        self.pads[p.pad].pattern.notes.push(Note {
-            start: start as u32,
-            len: len as u32,
-            pitch: p.pitch,
-            vel: p.vel.max(1),
-        });
+        self.pads[p.pad].pattern.notes.push(Note::new(start as u32, len as u32, p.pitch, p.vel.max(1)));
         self.push_pattern(p.pad);
     }
 }

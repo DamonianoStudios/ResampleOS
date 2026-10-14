@@ -10,6 +10,7 @@ use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Str
 pub fn draw(app: &mut App, ui: &mut Ui) {
     let mut remove = None;
     let mut trim = false;
+    let mut kit_pick = None;
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         theme::title(ui, "PADS", theme::AMBER);
@@ -34,6 +35,15 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
                     trim = true;
                     ui.close();
                 }
+                ui.separator();
+                ui.menu_button("Load drum kit", |ui| {
+                    for (k, kit) in crate::drum::kits().iter().enumerate() {
+                        if ui.button(kit.name).on_hover_text("Sixteen drum synth pads, on this bank if it is empty or the next empty one").clicked() {
+                            kit_pick = Some((b, k));
+                            ui.close();
+                        }
+                    }
+                });
             });
         }
         if pill(ui, false, "+").on_hover_text("Add a bank. Right-click a bank to remove it.").clicked() && app.add_bank() {
@@ -57,12 +67,27 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     if trim {
         app.trim_banks();
     }
+    if let Some((bank, kit)) = kit_pick {
+        app.bank = bank;
+        app.load_kit(kit);
+    }
 
     let avail = ui.available_rect_before_wrap();
-    let side = avail.width().min(avail.height()) - 4.0;
-    // Centred in whatever space the zone has.
-    let area = Rect::from_center_size(avail.center(), vec2(side, side));
     ui.allocate_rect(avail, Sense::hover());
+    // In a tall zone the matrix sits at the top and the stereo meters go in the space under
+    // it; otherwise the matrix is centred in whatever space there is.
+    let tall = avail.height() - avail.width() >= IMAGE_MIN_H + 10.0;
+    let area = if tall {
+        let side = avail.width() - 4.0;
+        let area = Rect::from_min_size(Pos2::new(avail.center().x - side * 0.5, avail.top() + 2.0), vec2(side, side));
+        let room = Rect::from_min_max(Pos2::new(avail.left() + 2.0, area.bottom() + 10.0), avail.max - vec2(2.0, 2.0));
+        let h = room.height().min(IMAGE_MAX_H);
+        stereo_image(app, ui, Rect::from_center_size(room.center(), vec2(room.width(), h)));
+        area
+    } else {
+        let side = avail.width().min(avail.height()) - 4.0;
+        Rect::from_center_size(avail.center(), vec2(side, side))
+    };
     if app.perform {
         super::scenes::launcher(app, ui, area);
         return;
@@ -82,7 +107,7 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     let group = per_row * per_row;
     let first_bank = if app.zoom == 0 { app.bank } else { app.bank / group * group };
     let n = per_row * 4;
-    let cell = side / n as f32;
+    let cell = area.width() / n as f32;
     let gap = (cell * 0.05).clamp(1.0, 5.0);
 
     app.pad_rects.clear();
@@ -147,6 +172,26 @@ fn pad_cell(app: &mut App, ui: &mut Ui, rect: Rect, idx: usize) {
             ui.close();
         }
         let kind = app.pads[idx].cfg.kind;
+        if kind != PadKind::Drum && app.pads[idx].is_empty() {
+            ui.menu_button("Make drum synth pad", |ui| {
+                ui.set_min_width(170.0);
+                for engine in crate::drum::DrumEngine::ALL {
+                    ui.label(egui::RichText::new(engine.name()).small().color(theme::DIM));
+                    for preset in crate::drum::presets().into_iter().filter(|s| s.params.engine == engine) {
+                        if ui.button(preset.name).clicked() {
+                            app.select(idx);
+                            app.make_drum(idx, Some((preset.name, preset.params)));
+                            app.tab = crate::app::Tab::Drum;
+                            ui.close();
+                        }
+                    }
+                }
+            });
+        }
+        if kind == PadKind::Drum && ui.button("Bake to take").clicked() {
+            app.drum_bake(idx, false);
+            ui.close();
+        }
         if kind != PadKind::Vocal && app.pads[idx].is_empty() && ui.button("Make vocal pad").clicked() {
             app.select(idx);
             app.make_vocal(idx);
@@ -157,7 +202,7 @@ fn pad_cell(app: &mut App, ui: &mut Ui, rect: Rect, idx: usize) {
             app.select(idx);
             ui.close();
         }
-        if kind == PadKind::Midi && ui.button("Make audio pad").clicked() {
+        if matches!(kind, PadKind::Midi | PadKind::Drum) && ui.button("Make audio pad").clicked() {
             app.set_kind(idx, PadKind::Audio);
             ui.close();
         }
@@ -205,6 +250,8 @@ fn pad_cell(app: &mut App, ui: &mut Ui, rect: Rect, idx: usize) {
         theme::CYAN_DIM
     } else if pad.cfg.kind == PadKind::Vocal {
         if pad.vocal.as_ref().is_some_and(|v| !v.is_empty()) { theme::MAGENTA } else { theme::MAGENTA_DIM }
+    } else if pad.cfg.kind == PadKind::Drum {
+        theme::LIME_DIM
     } else if !empty {
         theme::AMBER_DIM
     } else {
@@ -249,8 +296,13 @@ fn pad_cell(app: &mut App, ui: &mut Ui, rect: Rect, idx: usize) {
 
     let w = rect.width();
     if w < 34.0 {
-        // 16x16 overview: just the LED.
-        p.rect_filled(rect.shrink(w * 0.28), 2.0, led);
+        // 16x16 overview: just the LED, or for a drum synth pad, what kind of drum it is.
+        if pad.cfg.kind == PadKind::Drum {
+            let colour = if level > 0.0 { theme::GREEN } else { theme::LIME };
+            super::drum::glyph(&p, rect.shrink(w * 0.18), pad.cfg.drum.engine, colour);
+        } else {
+            p.rect_filled(rect.shrink(w * 0.28), 2.0, led);
+        }
         return;
     }
 
@@ -284,6 +336,17 @@ fn pad_cell(app: &mut App, ui: &mut Ui, rect: Rect, idx: usize) {
                 if let (true, Some(s)) = (pos != u32::MAX, pad.sample()) {
                     let x = inner.left() + pos as f32 / s.len().max(1) as f32 * inner.width();
                     p.vline(x, inner.y_range(), Stroke::new(1.0, theme::TEXT));
+                }
+            }
+            PadKind::Drum => {
+                // The kind of drum and how it dies away, instead of a waveform.
+                let colour = if level > 0.0 { theme::GREEN } else { theme::LIME };
+                let icon = inner.height().min(inner.width() * 0.4).min(30.0);
+                let glyph = Rect::from_min_size(Pos2::new(inner.left(), inner.center().y - icon * 0.5), vec2(icon, icon));
+                super::drum::glyph(&p, glyph, pad.cfg.drum.engine, colour);
+                let curve = Rect::from_min_max(Pos2::new(glyph.right() + 6.0, inner.top() + 2.0), inner.max);
+                if curve.width() > 12.0 {
+                    super::drum::decay_curve(&p, curve, &pad.cfg.drum, colour);
                 }
             }
             PadKind::Midi => {
@@ -338,5 +401,101 @@ fn pad_cell(app: &mut App, ui: &mut Ui, rect: Rect, idx: usize) {
             FontId::monospace(10.0),
             theme::FAINT,
         );
+    }
+}
+
+/// Least height worth giving the stereo meters, and the most they take.
+const IMAGE_MIN_H: f32 = 110.0;
+const IMAGE_MAX_H: f32 = 180.0;
+
+/// A stereo image meter (goniometer) and a phase correlation meter for what the skip-back
+/// buffer is recording, the master unless Capture says otherwise.
+///
+/// In the image, a mono sound is a vertical line, a wide one spreads sideways, and one
+/// leaning left or right tilts that way. The correlation meter reads +1 for mono, around 0
+/// for very wide, and below 0 when the two sides fight each other, which is what thins out
+/// or vanishes when the mix is played in mono.
+fn stereo_image(app: &App, ui: &Ui, rect: Rect) {
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, 8.0, theme::WELL);
+    p.rect_stroke(rect, 8.0, Stroke::new(1.0, Color32::BLACK), StrokeKind::Inside);
+    let source = match app.ring_src {
+        0 => "MASTER".to_string(),
+        5 => "INPUT".to_string(),
+        6 => "BUS V".to_string(),
+        s => format!("BUS {s}"),
+    };
+    let ring = &app.shared.ring;
+    let window = (app.shared.sample_rate as f32 * 0.05) as u64;
+    let now = ring.written();
+    let (l, r) = ring.read(now.saturating_sub(window), now);
+
+    // ---- The image: a square on the left, scaled so the loudest point just fits.
+    let side = rect.height() - 16.0;
+    let image = Rect::from_min_size(rect.min + vec2(8.0, 8.0), vec2(side, side));
+    let c = image.center();
+    let radius = side * 0.5;
+    let dim = Color32::from_rgb(34, 38, 40);
+    p.circle_stroke(c, radius, Stroke::new(1.0, dim));
+    p.circle_stroke(c, radius * 0.5, Stroke::new(1.0, dim));
+    p.vline(c.x, image.y_range(), Stroke::new(1.0, dim));
+    p.hline(image.x_range(), c.y, Stroke::new(1.0, dim));
+    // The L and R axes, at 45 degrees as on a hardware goniometer.
+    let d = radius * std::f32::consts::FRAC_1_SQRT_2;
+    p.line_segment([c + vec2(-d, -d), c + vec2(d, d)], Stroke::new(1.0, dim));
+    p.line_segment([c + vec2(d, -d), c + vec2(-d, d)], Stroke::new(1.0, dim));
+    p.text(c + vec2(-d - 2.0, -d - 2.0), Align2::RIGHT_BOTTOM, "L", FontId::proportional(9.0), theme::FAINT);
+    p.text(c + vec2(d + 2.0, -d - 2.0), Align2::LEFT_BOTTOM, "R", FontId::proportional(9.0), theme::FAINT);
+    let peak = l.iter().chain(&r).fold(0f32, |m, v| m.max(v.abs())).max(0.05);
+    let scale = radius * 0.92 / (peak * std::f32::consts::SQRT_2);
+    for i in (0..l.len()).step_by(2) {
+        let (a, b) = (l[i], r[i]);
+        let pos = c + vec2((b - a) * scale, -(a + b) * scale);
+        if image.contains(pos) {
+            p.rect_filled(Rect::from_center_size(pos, vec2(1.6, 1.6)), 0.0, theme::GREEN.gamma_multiply(0.55));
+        }
+    }
+
+    // ---- Readouts to the right: correlation, width and balance.
+    let (mut lr, mut ll, mut rr, mut mid, mut sides) = (0f64, 0f64, 0f64, 0f64, 0f64);
+    for (a, b) in l.iter().zip(&r) {
+        let (a, b) = (*a as f64, *b as f64);
+        lr += a * b;
+        ll += a * a;
+        rr += b * b;
+        mid += (a + b) * (a + b);
+        sides += (a - b) * (a - b);
+    }
+    let silent = ll + rr < 1e-7;
+    let corr = if silent { 0.0 } else { (lr / (ll * rr).sqrt().max(1e-12)).clamp(-1.0, 1.0) as f32 };
+    let width = if silent { 0.0 } else { (sides / (mid + sides)).sqrt() as f32 };
+    let balance = if silent { 0.0 } else { ((rr.sqrt() - ll.sqrt()) / (rr.sqrt() + ll.sqrt())) as f32 };
+
+    let col = Rect::from_min_max(Pos2::new(image.right() + 16.0, rect.top() + 8.0), rect.max - vec2(12.0, 8.0));
+    if col.width() < 60.0 {
+        return;
+    }
+    p.text(col.left_top(), Align2::LEFT_TOP, format!("STEREO · {source}"), theme::bold(10.0), theme::DIM);
+    let rows = [
+        ("CORRELATION", corr, -1.0f32, 1.0f32, format!("{corr:+.2}"), if corr < 0.0 { theme::RED } else if corr < 0.3 { theme::AMBER } else { theme::GREEN }),
+        ("WIDTH", width, 0.0, 1.0, format!("{:.0}%", width * 100.0), theme::CYAN),
+        ("BALANCE", balance, -1.0, 1.0, super::widgets::pan_text(balance), theme::AMBER),
+    ];
+    let row_h = (col.height() - 18.0) / rows.len() as f32;
+    for (k, (name, value, lo, hi, text, colour)) in rows.into_iter().enumerate() {
+        let top = col.top() + 18.0 + k as f32 * row_h;
+        p.text(Pos2::new(col.left(), top), Align2::LEFT_TOP, name, FontId::proportional(9.5), theme::FAINT);
+        p.text(Pos2::new(col.right(), top), Align2::RIGHT_TOP, text, theme::bold(10.5), if silent { theme::FAINT } else { colour });
+        let bar = Rect::from_min_size(Pos2::new(col.left(), top + 15.0), vec2(col.width(), (row_h - 22.0).clamp(5.0, 9.0)));
+        p.rect_filled(bar, 2.0, Color32::from_rgb(8, 8, 10));
+        let x_of = |v: f32| bar.left() + (v - lo) / (hi - lo) * bar.width();
+        // Bipolar meters fill from the middle, the width meter from the left.
+        let from = if lo < 0.0 { x_of(0.0) } else { bar.left() };
+        p.vline(x_of(0.0), bar.y_range().expand(2.0), Stroke::new(1.0, theme::FAINT));
+        if !silent {
+            let to = x_of(value);
+            p.rect_filled(Rect::from_x_y_ranges(from.min(to)..=from.max(to), bar.y_range()), 2.0, colour.gamma_multiply(0.8));
+            p.vline(to, bar.y_range().expand(2.0), Stroke::new(2.0, colour));
+        }
     }
 }

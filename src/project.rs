@@ -55,6 +55,9 @@ struct PadFile {
     /// the takes cannot be read.
     #[serde(default)]
     vocal: Option<StackFile>,
+    /// The drum synth patch that made `sample`, if it made it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    drum_patch: Option<crate::drum::DrumParams>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -227,6 +230,7 @@ pub fn save(app: &App, dir: &Path) -> Result<usize, String> {
                 Some(stack) if !stack.is_empty() => Some(save_stack(dir, &pad_label(index), stack, app.shared.sample_rate)?),
                 _ => None,
             },
+            drum_patch: app.take_patch(index),
         });
     }
     let count = pads.len();
@@ -289,6 +293,9 @@ pub fn load(app: &mut App, dir: &Path) -> Result<usize, String> {
             });
         }
         p.transients = pf.transients.clone();
+        if let (Some(patch), Some(take)) = (pf.drum_patch, p.sample().cloned()) {
+            p.drum_patches.push((take, patch));
+        }
     }
 
     app.send(Cmd::Play(false));
@@ -309,6 +316,13 @@ pub fn load(app: &mut App, dir: &Path) -> Result<usize, String> {
     app.preserve_transients = file.preserve_transients;
     app.bank = 0;
     app.selected = 0;
+    // Open on the tab that suits the first pad.
+    app.tab = match app.pads[0].cfg.kind {
+        crate::engine::PadKind::Vocal => crate::app::Tab::Vocal,
+        crate::engine::PadKind::Drum => crate::app::Tab::Drum,
+        _ if matches!(app.tab, crate::app::Tab::Vocal | crate::app::Tab::Drum) => crate::app::Tab::Wave,
+        _ => app.tab,
+    };
     app.send(Cmd::QueueScene(None));
     app.queued_scene = None;
     app.chain_pos = 0;

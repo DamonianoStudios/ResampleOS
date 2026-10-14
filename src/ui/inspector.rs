@@ -20,13 +20,14 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
         let accent = match cfg.kind {
             PadKind::Midi => theme::CYAN,
             PadKind::Vocal => theme::MAGENTA,
+            PadKind::Drum => theme::LIME,
             PadKind::Audio => theme::AMBER,
         };
         ui.label(egui::RichText::new(pad_label(sel)).font(theme::bold(22.0)).color(accent));
         ui.add(egui::TextEdit::singleline(&mut app.pads[sel].name).desired_width(130.0).hint_text("name"));
         ui.add_space(6.0);
         ui.spacing_mut().item_spacing.x = 2.0;
-        for (tab, label) in [(Tab::Wave, "Waveform"), (Tab::Roll, "Piano Roll"), (Tab::Steps, "Steps"), (Tab::Mod, "Mod / Warp"), (Tab::Vocal, "Vocal")] {
+        for (tab, label) in [(Tab::Wave, "Waveform"), (Tab::Roll, "Piano Roll"), (Tab::Steps, "Steps"), (Tab::Mod, "Mod / Warp"), (Tab::Vocal, "Vocal"), (Tab::Drum, "Drum")] {
             if pill(ui, app.tab == tab, label).clicked() {
                 app.tab = tab;
                 if tab == Tab::Roll {
@@ -35,6 +36,9 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
             }
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if pill(ui, cfg.kind == PadKind::Drum, "Drum").on_hover_text("The built-in drum synth").clicked() && cfg.kind != PadKind::Drum {
+                action = Some(PadAction::SetKind(PadKind::Drum));
+            }
             if pill(ui, cfg.kind == PadKind::Vocal, "Vocal").clicked() && cfg.kind != PadKind::Vocal {
                 action = Some(PadAction::SetKind(PadKind::Vocal));
             }
@@ -96,11 +100,11 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     ui.separator();
 
     // The roll and step tabs edit the pad themselves, so they get the committed settings.
-    let own_editor = matches!(app.tab, Tab::Roll | Tab::Steps | Tab::Vocal);
+    let own_editor = matches!(app.tab, Tab::Roll | Tab::Steps | Tab::Vocal | Tab::Drum);
     match app.tab {
         Tab::Wave => action = wave_tab(app, ui, &mut cfg).or(action),
         Tab::Mod => super::modwarp::draw(app, ui, &mut cfg),
-        Tab::Roll | Tab::Steps | Tab::Vocal => {}
+        Tab::Roll | Tab::Steps | Tab::Vocal | Tab::Drum => {}
     }
     if cfg != before {
         app.pads[sel].cfg = cfg;
@@ -113,6 +117,7 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
         match app.tab {
             Tab::Roll => roll::draw(app, ui),
             Tab::Vocal => super::vocal::draw(app, ui),
+            Tab::Drum => super::drum::draw(app, ui),
             _ => steps::draw(app, ui),
         }
     }
@@ -135,6 +140,10 @@ fn wave_tab(app: &mut App, ui: &mut Ui, cfg: &mut PadCfg) -> Option<PadAction> {
     let mut action = None;
     if cfg.kind == PadKind::Midi {
         ui.label(egui::RichText::new("MIDI pad: switch to the Piano Roll tab (Tab) to edit its pattern.").color(theme::DIM));
+        return None;
+    }
+    if cfg.kind == PadKind::Drum {
+        ui.label(egui::RichText::new("Drum synth pad: its sound is in the Drum tab. Bake it to a take there to edit it as audio.").color(theme::DIM));
         return None;
     }
     let Some(s) = app.pads[sel].sample().cloned() else {
@@ -194,8 +203,9 @@ fn wave_tab(app: &mut App, ui: &mut Ui, cfg: &mut PadCfg) -> Option<PadAction> {
         };
         let p = &app.pads[sel];
         let (i, n) = (p.take_idx + 1, p.takes.len());
+        let synth = app.take_patch(sel).is_some();
         pick(
-            ui.add_enabled(i > 1, egui::Button::new("<")).on_hover_text("Ctrl+Shift+Z").clicked(),
+            ui.add_enabled(i > 1 || synth, egui::Button::new("<")).on_hover_text("Ctrl+Shift+Z").clicked(),
             PadAction::StepTake(-1),
         );
         ui.label(format!("take {i}/{n}"));
@@ -203,6 +213,14 @@ fn wave_tab(app: &mut App, ui: &mut Ui, cfg: &mut PadCfg) -> Option<PadAction> {
             ui.add_enabled(i < n, egui::Button::new(">")).on_hover_text("Ctrl+Shift+Y").clicked(),
             PadAction::StepTake(1),
         );
+        if synth {
+            pick(
+                ui.button(egui::RichText::new("Edit synth").color(theme::LIME))
+                    .on_hover_text("This take was baked from the drum synth: bring the synth back with the knobs as they were")
+                    .clicked(),
+                PadAction::Resynth,
+            );
+        }
         ui.separator();
         ui.label("Attack");
         ui.add(egui::DragValue::new(&mut cfg.attack).speed(0.001).range(0.0..=2.0).suffix(" s").fixed_decimals(3));

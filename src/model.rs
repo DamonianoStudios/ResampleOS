@@ -43,6 +43,9 @@ pub struct PadModel {
     pub plugin: Option<PluginSlot>,
     /// Takes and comp of a vocal pad. Its sample (in `takes`) is the render of this.
     pub vocal: Option<crate::vocal::VocalStack>,
+    /// The drum synth patch behind each take the drum synth baked, matched to the take
+    /// by its buffer. Stepping back to such a take can bring the live synth back.
+    pub drum_patches: Vec<(Arc<SampleData>, crate::drum::DrumParams)>,
     /// Onset envelope of one take (identified by its buffer address), kept so that
     /// dragging the sensitivity slider only re-runs the cheap peak-picking.
     onset_cache: Option<(usize, Arc<Vec<f32>>)>,
@@ -114,6 +117,7 @@ impl PadModel {
             mini: self.mini.clone(),
             plugin: None,
             vocal: self.vocal.clone(),
+            drum_patches: self.drum_patches.iter().filter(|(s, _)| self.sample().is_some_and(|t| Arc::ptr_eq(s, t))).cloned().collect(),
             onset_cache: None,
         }
     }

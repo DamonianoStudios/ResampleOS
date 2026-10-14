@@ -17,12 +17,14 @@ pub enum PadAction {
     BakePitch,
     BakeFx,
     StepTake(i32),
+    /// Bring back the drum synth that baked the active take.
+    Resynth,
 }
 
 impl App {
     pub fn pad_action(&mut self, idx: usize, action: PadAction) {
         // A vocal pad's sample is rebuilt from its takes, so an edit to it would not last.
-        let rewrites = !matches!(action, PadAction::SetKind(_) | PadAction::Chop | PadAction::MakeMidi);
+        let rewrites = !matches!(action, PadAction::SetKind(_) | PadAction::Chop | PadAction::MakeMidi | PadAction::Resynth);
         if rewrites && self.is_vocal(idx) {
             self.status = "A vocal pad plays its comp. Bake it to a pad (Vocal tab) to edit the audio.".into();
             return;
@@ -58,6 +60,7 @@ impl App {
                 }
             }
             PadAction::BakeFx => self.bake_fx(idx),
+            PadAction::Resynth => self.drum_resynth(idx),
             PadAction::StepTake(delta) => self.step_take(idx, delta),
         }
     }
@@ -190,6 +193,20 @@ impl App {
         if p.takes.is_empty() {
             return;
         }
+        // A drum pad's live synth sits before its first take: stepping back from there
+        // brings it back, and stepping on from the synth goes to the take it was on.
+        if p.cfg.kind == PadKind::Drum {
+            if delta > 0 {
+                let at = p.take_idx;
+                self.drum_to_take(idx, at);
+            }
+            return;
+        }
+        if delta < 0 && p.take_idx == 0 && self.take_patch(idx).is_some() {
+            self.drum_resynth(idx);
+            return;
+        }
+        let p = &mut self.pads[idx];
         let to = (p.take_idx as i32 + delta).clamp(0, p.takes.len() as i32 - 1) as usize;
         if to == p.take_idx {
             self.status = format!("{}: no {} take", pad_label(idx), if delta < 0 { "earlier" } else { "later" });
@@ -222,6 +239,10 @@ impl App {
     pub fn set_kind(&mut self, idx: usize, kind: PadKind) {
         if kind == PadKind::Vocal {
             self.make_vocal(idx);
+            return;
+        }
+        if kind == PadKind::Drum {
+            self.make_drum(idx, None);
             return;
         }
         if self.is_vocal(idx) {
