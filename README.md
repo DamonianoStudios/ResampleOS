@@ -6,6 +6,17 @@ ResampleOS is a pad-based DAW built around committing to audio. Linear DAWs make
 
 ![ResampleOS: pad matrix, waveform inspector and bus effects](docs/images/screenshot.png)
 
+| | |
+| --- | --- |
+| ![Playing a project: pads light as they sound](docs/images/demo-play.gif) | ![Comping vocal takes by swiping](docs/images/demo-vocal.gif) |
+| Pads light as they sound, and the skip-back buffer is always recording | Swipe across a take to put that stretch of it in the comp |
+| ![Vocal takes](docs/images/vocal.png) | ![Step sequencer](docs/images/steps.png) |
+| Vocal takes, comp and doubles | Step sequencer for the whole bank |
+| ![Mod / Warp](docs/images/mod-warp.png) | ![Perform mode](docs/images/perform.png) |
+| Filter, LFO and warp per pad | Perform mode: the pads launch loops |
+
+A short tour of the tabs: [demo-tour.gif](docs/images/demo-tour.gif).
+
 > **Status: pre-release.** ResampleOS is developed and tested on Windows 11. It is written with cross-platform libraries, but it has not been built or run on macOS or Linux, and the plugin editor windows, icon embedding and UI font loading are Windows-specific today.
 
 ## What it does
