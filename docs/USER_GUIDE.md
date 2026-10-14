@@ -206,7 +206,7 @@ Each pad is sent either straight to the master (**Thru**), to one of four buses,
 | FET Comp | Thresh, Ratio, Mix |
 | Tape Delay | Time (tempo-synced), Feedbk, Mix |
 | Reverb | Size, Damp, Mix |
-| Pitch Lock | Retune (slow and natural to instant), Formant (up to 7 semitones either way), Shift (an octave either way). Pulls a single voice onto the project key and scale |
+| Pitch Lock | Retune (slow and natural to instant), Formant (up to 7 semitones either way), Shift (an octave either way). Pulls a single voice onto the project key and scale. It is for one dry voice at a time: harmonies, doubles or a vocal with reverb already on it give it no single pitch to follow |
 | Vocal Comp | Level (a slow leveller), Peak (a fast limiter after it), Grit (drive) |
 | Dub Throw | Throw (how much is sent into the echo), Time (tempo-synced), Space (reverb and repeats) |
 

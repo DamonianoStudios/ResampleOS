@@ -1,7 +1,7 @@
-//! Custom controls shared by the zones: knobs, meters, pills and the transport button.
+﻿//! Custom controls shared by the zones: knobs, meters, pills and the transport button.
 
 use super::theme;
-use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, vec2};
+use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Response, Sense, Stroke, Ui, vec2};
 
 /// Rotary control for 0..1 values: drag up/down (Shift for fine), double-click to reset.
 pub fn knob(ui: &mut Ui, value: &mut f32, label: &str, default: f32, color: Color32) -> Response {
@@ -173,7 +173,7 @@ pub fn toggle(ui: &mut Ui, on: bool, text: &str, color: Color32) -> Response {
     ui.add(b)
 }
 
-/// One segment of a tab row or filter: filled when selected, quiet otherwise.
+/// One segment of a tab row or filter: a key that stays down, lit, while it is selected.
 pub fn pill(ui: &mut Ui, selected: bool, text: &str) -> Response {
     let font = if selected { theme::bold(13.0) } else { FontId::proportional(13.0) };
     let galley = ui.painter().layout_no_wrap(text.to_owned(), font, theme::TEXT);
@@ -184,9 +184,10 @@ pub fn pill(ui: &mut Ui, selected: bool, text: &str) -> Response {
     } else if resp.hovered() {
         (theme::HOVER, theme::TEXT)
     } else {
-        (Color32::TRANSPARENT, theme::DIM)
+        (theme::RAISED, theme::DIM)
     };
-    p.rect_filled(rect, rect.height() * 0.5, fill);
+    // Drawn flat at the key radius; the theme's finishing pass gives it its bevel.
+    p.rect_filled(rect, 6.0, fill);
     p.galley_with_override_text_color(rect.center() - galley.size() * 0.5, galley, fg);
     resp
 }
@@ -202,10 +203,7 @@ pub fn transport_button(ui: &mut Ui, playing: bool) -> Response {
     } else {
         theme::RAISED
     };
-    p.rect_filled(rect, 10.0, fill);
-    if !playing {
-        p.rect_stroke(rect, 10.0, Stroke::new(1.0, theme::FAINT), StrokeKind::Inside);
-    }
+    theme::paint_key(p, rect, 8.0, fill, playing);
     let c = rect.center();
     if playing {
         p.rect_filled(Rect::from_center_size(c, vec2(15.0, 15.0)), 2.0, theme::BG);

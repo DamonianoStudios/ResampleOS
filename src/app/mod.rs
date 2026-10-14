@@ -497,6 +497,7 @@ impl eframe::App for App {
         self.poll();
         self.keys(&ctx);
         crate::ui::draw(self, ui);
+        crate::ui::theme::finish(&ctx);
         self.vocal_commit(&ctx);
         self.track_history(&ctx);
         // Full frame rate while something is moving; otherwise a slow tick is enough to

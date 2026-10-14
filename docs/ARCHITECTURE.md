@@ -147,6 +147,7 @@ Hosted plugins run inside the app's process. A plugin that crashes while playing
 `src/ui/` draws with [egui](https://github.com/emilk/egui), an immediate-mode toolkit: the whole interface is redrawn from `App` on every frame, and there is no separate widget state to keep in step.
 
 - `theme.rs` has colours, fonts and the egui style. `widgets.rs` has the custom controls.
+- The brushed steel and the bevelled keys are added after layout, not by the widgets. Panels are filled with `theme::PANEL` and buttons with a few flat colours at one corner radius; `theme::finish`, called once per frame, goes through the painted shapes and replaces those rectangles with textured plates and shaded keys. egui's own buttons, menus and drop-downs get the look without their call sites changing. A rectangle that should stay flat must not use the key radius (6).
 - Each zone is a card with an exact rectangle (`theme::card_in`), so zones cannot overlap.
 - Settings are edited on a copy and committed once per frame. Anything that rewrites a pad is returned as a `PadAction` and run after the commit.
 - The window repaints at full rate only while something is moving, and about fifteen times a second otherwise.

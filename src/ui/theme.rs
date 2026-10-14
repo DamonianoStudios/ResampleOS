@@ -1,18 +1,33 @@
-//! Colours, fonts and the egui style. The look is a dark hardware panel: near-black
-//! chassis, charcoal cards, amber for audio, cyan for MIDI.
+//! Colours, fonts and the egui style. The look is a piece of rack hardware: a near-black
+//! chassis, brushed-steel panels, and buttons that stand proud of them like the keys of a
+//! tape deck. Amber is audio, cyan is MIDI, magenta is vocal.
+//!
+//! The metal and the keys are not drawn by the widgets. Every zone, window and menu fills
+//! its background with [`PANEL`], and every button with one of a few flat colours; once
+//! the frame has been laid out, [`finish`] goes through what was painted and dresses those
+//! flat rectangles up. That way egui's own buttons, menus and drop-downs get the same
+//! treatment as ours without each call site having to ask for it.
 
-use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Margin, Rect, Stroke, StrokeKind, TextStyle, Ui, vec2};
-use std::sync::Arc;
+use eframe::egui::epaint::{Mesh, RectShape, Vertex, WHITE_UV};
+use eframe::egui::{self, Color32, CornerRadius, FontFamily, FontId, Margin, Pos2, Rect, Shape, Stroke, StrokeKind, TextStyle, Ui, vec2};
+use std::sync::{Arc, OnceLock};
 
 pub const BG: Color32 = Color32::from_rgb(10, 11, 14);
 pub const PANEL: Color32 = Color32::from_rgb(21, 23, 29);
 pub const WELL: Color32 = Color32::from_rgb(14, 15, 19);
-pub const RAISED: Color32 = Color32::from_rgb(36, 39, 48);
-pub const HOVER: Color32 = Color32::from_rgb(48, 52, 64);
-pub const LINE: Color32 = Color32::from_rgb(44, 48, 59);
-pub const TEXT: Color32 = Color32::from_rgb(236, 238, 243);
-pub const DIM: Color32 = Color32::from_rgb(134, 141, 158);
-pub const FAINT: Color32 = Color32::from_rgb(78, 84, 99);
+/// A key at rest, under the pointer, and held down.
+pub const RAISED: Color32 = Color32::from_rgb(58, 61, 68);
+pub const HOVER: Color32 = Color32::from_rgb(74, 78, 87);
+const PRESSED: Color32 = Color32::from_rgb(40, 42, 48);
+pub const LINE: Color32 = Color32::from_rgb(24, 25, 29);
+pub const TEXT: Color32 = Color32::from_rgb(240, 241, 244);
+pub const DIM: Color32 = Color32::from_rgb(166, 171, 182);
+pub const FAINT: Color32 = Color32::from_rgb(108, 113, 124);
+/// What the brushed texture is tinted with for panels, and for the chassis behind them.
+const STEEL: Color32 = Color32::from_rgb(88, 91, 98);
+const CHASSIS: Color32 = Color32::from_rgb(30, 31, 34);
+/// Corner radius of every key. [`finish`] knows a key by it, so nothing else uses it.
+const KEY_RADIUS: u8 = 6;
 pub const AMBER: Color32 = Color32::from_rgb(255, 176, 46);
 pub const AMBER_DIM: Color32 = Color32::from_rgb(140, 96, 26);
 pub const GREEN: Color32 = Color32::from_rgb(64, 230, 118);
@@ -65,8 +80,57 @@ fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
+static METAL: OnceLock<egui::TextureHandle> = OnceLock::new();
+/// Size of the brushed-metal tile, in texels and in points.
+const METAL_SIZE: [usize; 2] = [1024, 256];
+
+/// A tile of brushed metal: fine horizontal scratches, each a slightly different shade and
+/// each wandering a little in brightness along its length. Grey only; the tint is applied
+/// where it is drawn. It repeats without a seam in both directions.
+fn brushed_metal() -> egui::ColorImage {
+    let [w, h] = METAL_SIZE;
+    let mut seed = 0x9e37_79b9u32;
+    let mut rand = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        (seed >> 8) as f32 / (1 << 24) as f32 - 0.5
+    };
+    let mut rows = vec![0f32; w * h];
+    let mut noise = vec![0f32; w];
+    for y in 0..h {
+        let shade = rand();
+        noise.iter_mut().for_each(|n| *n = rand());
+        // A moving average that wraps round the tile, run at two lengths: long drifts
+        // along the scratch plus shorter flecks.
+        for (span, weight) in [(220usize, 3.2f32), (14, 1.0)] {
+            let mut sum: f32 = (0..span).map(|k| noise[k]).sum();
+            for x in 0..w {
+                rows[y * w + x] += sum / span as f32 * weight;
+                sum += noise[(x + span) % w] - noise[x];
+            }
+        }
+        for x in 0..w {
+            rows[y * w + x] += shade * 0.24 + rand() * 0.03;
+        }
+    }
+    let gray: Vec<u8> = (0..w * h)
+        .map(|i| {
+            // Scratches are not one texel sharp: let each bleed a little into the next.
+            let (x, y) = (i % w, i / w);
+            let v = rows[i] * 0.6 + rows[(y + 1) % h * w + x] * 0.25 + rows[(y + h - 1) % h * w + x] * 0.15;
+            ((0.78 + v * 0.55).clamp(0.45, 1.0) * 255.0) as u8
+        })
+        .collect();
+    egui::ColorImage::from_gray(METAL_SIZE, &gray)
+}
+
 pub fn install(ctx: &egui::Context) {
     install_fonts(ctx);
+    METAL.get_or_init(|| {
+        let options = egui::TextureOptions { wrap_mode: egui::TextureWrapMode::Repeat, ..egui::TextureOptions::LINEAR };
+        ctx.load_texture("brushed-metal", brushed_metal(), options)
+    });
 
     let mut v = egui::Visuals::dark();
     v.panel_fill = BG;
@@ -75,10 +139,10 @@ pub fn install(ctx: &egui::Context) {
     v.faint_bg_color = Color32::from_rgb(26, 28, 35);
     v.window_corner_radius = CornerRadius::same(10);
     v.menu_corner_radius = CornerRadius::same(8);
-    v.window_stroke = Stroke::new(1.0, LINE);
+    v.window_stroke = Stroke::new(1.0, Color32::BLACK);
     v.slider_trailing_fill = true;
 
-    let radius = CornerRadius::same(6);
+    let radius = CornerRadius::same(KEY_RADIUS);
     let w = &mut v.widgets;
     for s in [&mut w.noninteractive, &mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
         s.corner_radius = radius;
@@ -97,8 +161,8 @@ pub fn install(ctx: &egui::Context) {
     w.hovered.bg_fill = HOVER;
     w.hovered.weak_bg_fill = HOVER;
     w.hovered.bg_stroke = Stroke::new(1.0, FAINT);
-    w.active.bg_fill = HOVER;
-    w.active.weak_bg_fill = HOVER;
+    w.active.bg_fill = PRESSED;
+    w.active.weak_bg_fill = PRESSED;
     w.active.bg_stroke = Stroke::new(1.0, AMBER);
     w.open.bg_fill = HOVER;
     w.open.weak_bg_fill = HOVER;
@@ -130,7 +194,7 @@ pub fn card_in(ui: &mut Ui, rect: Rect, accent: Option<Color32>, add: impl FnOnc
     ui.allocate_rect(rect, egui::Sense::hover());
     let p = ui.painter();
     p.rect_filled(rect, 10.0, PANEL);
-    p.rect_stroke(rect, 10.0, Stroke::new(1.0, accent.unwrap_or(LINE)), StrokeKind::Inside);
+    p.rect_stroke(rect, 10.0, Stroke::new(1.0, accent.unwrap_or(Color32::BLACK)), StrokeKind::Inside);
     let inner = rect.shrink2(vec2(12.0, 10.0));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
     child.set_clip_rect(rect.shrink(1.0).intersect(ui.clip_rect()));
@@ -150,4 +214,139 @@ pub fn caption(ui: &mut Ui, text: &str) {
 /// Same, in an accent colour, for zone titles.
 pub fn title(ui: &mut Ui, text: &str, color: Color32) {
     ui.label(egui::RichText::new(text).font(bold(11.5)).color(color).extra_letter_spacing(1.6));
+}
+
+fn blend(a: Color32, b: Color32, t: f32) -> Color32 {
+    let f = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
+    Color32::from_rgba_premultiplied(f(a.r(), b.r()), f(a.g(), b.g()), f(a.b(), b.b()), f(a.a(), b.a()))
+}
+
+/// A rounded rectangle shaded from `top` to `bottom`.
+fn shaded(rect: Rect, radius: f32, top: Color32, bottom: Color32) -> Shape {
+    let r = radius.min(rect.width() * 0.5).min(rect.height() * 0.5);
+    let mut mesh = Mesh::default();
+    let mut point = |pos: Pos2| {
+        let t = ((pos.y - rect.top()) / rect.height().max(1.0)).clamp(0.0, 1.0);
+        mesh.vertices.push(Vertex { pos, uv: WHITE_UV, color: blend(top, bottom, t) });
+    };
+    point(rect.center());
+    let corners = [
+        (Pos2::new(rect.right() - r, rect.top() + r), -90f32),
+        (Pos2::new(rect.right() - r, rect.bottom() - r), 0.0),
+        (Pos2::new(rect.left() + r, rect.bottom() - r), 90.0),
+        (Pos2::new(rect.left() + r, rect.top() + r), 180.0),
+    ];
+    const STEPS: usize = 4;
+    for (centre, from) in corners {
+        for k in 0..=STEPS {
+            let a = (from + 90.0 * k as f32 / STEPS as f32).to_radians();
+            point(centre + vec2(a.cos(), a.sin()) * r);
+        }
+    }
+    let rim = (STEPS as u32 + 1) * 4;
+    for k in 0..rim {
+        mesh.indices.extend([0, 1 + k, 1 + (k + 1) % rim]);
+    }
+    Shape::mesh(mesh)
+}
+
+/// The shapes of a key standing proud of the panel: the shadow it casts, a face that
+/// catches the light at the top, and a dark rim. `down` is a key pushed in: no shadow to
+/// speak of, and the light falls the other way.
+fn key_shapes(rect: Rect, radius: f32, fill: Color32, down: bool) -> Vec<Shape> {
+    let lift = if down { 0.6 } else { 2.0 };
+    let (top, bottom) = if down {
+        (blend(fill, Color32::BLACK, 0.30), blend(fill, Color32::WHITE, 0.04))
+    } else {
+        (blend(fill, Color32::WHITE, 0.20), blend(fill, Color32::BLACK, 0.30))
+    };
+    let mut shapes = vec![
+        Shape::rect_filled(rect.translate(vec2(0.0, lift)).expand(0.5), radius + 0.5, Color32::from_black_alpha(150)),
+        shaded(rect, radius, top, bottom),
+        Shape::rect_stroke(rect, radius, Stroke::new(1.0, Color32::from_black_alpha(190)), StrokeKind::Inside),
+    ];
+    let inset = radius * 0.6 + 1.0;
+    if rect.width() > inset * 2.0 + 2.0 {
+        // The bevel: a bright edge where the top of the key turns over, and on a raised
+        // key a darker lip along the bottom.
+        let edge = |y: f32, colour: Color32| Shape::line_segment([Pos2::new(rect.left() + inset, y), Pos2::new(rect.right() - inset, y)], Stroke::new(1.0, colour));
+        if down {
+            shapes.push(edge(rect.top() + 1.5, Color32::from_black_alpha(110)));
+        } else {
+            shapes.push(edge(rect.top() + 1.5, Color32::from_white_alpha(62)));
+            shapes.push(edge(rect.bottom() - 1.5, Color32::from_black_alpha(70)));
+        }
+    }
+    shapes
+}
+
+/// Paints a key directly, for controls that draw themselves (pads, the transport button).
+pub fn paint_key(p: &egui::Painter, rect: Rect, radius: f32, fill: Color32, down: bool) {
+    p.extend(key_shapes(rect, radius, fill, down));
+}
+
+/// A panel of brushed steel in place of a flat one.
+fn plate(rect: &RectShape, metal: egui::TextureId, tint: Color32) -> Shape {
+    let (w, h) = (METAL_SIZE[0] as f32, METAL_SIZE[1] as f32);
+    let r = rect.rect;
+    let uv = Rect::from_min_max(Pos2::new(r.left() / w, r.top() / h), Pos2::new(r.right() / w, r.bottom() / h));
+    let mut steel = rect.clone().with_texture(metal, uv);
+    steel.fill = tint;
+    let radius = rect.corner_radius.nw as f32;
+    // Light falling from above: a little brighter at the top of the panel, darker below.
+    let sheen = shaded(r.shrink(1.0), (radius - 1.0).max(0.0), Color32::from_white_alpha(16), Color32::from_black_alpha(58));
+    let lip = Shape::line_segment(
+        [Pos2::new(r.left() + radius, r.top() + 1.5), Pos2::new(r.right() - radius, r.top() + 1.5)],
+        Stroke::new(1.0, Color32::from_white_alpha(30)),
+    );
+    Shape::Vec(vec![steel.into(), sheen, lip])
+}
+
+fn dress(shape: &mut Shape, metal: egui::TextureId) {
+    match shape {
+        Shape::Vec(shapes) => shapes.iter_mut().for_each(|s| dress(s, metal)),
+        Shape::Rect(rect) if rect.brush.is_none() => {
+            let size = rect.rect.size();
+            let fill = rect.fill;
+            if fill == PANEL {
+                *shape = plate(rect, metal, STEEL);
+            } else if fill == BG && size.x > 80.0 && size.y > 30.0 {
+                *shape = plate(rect, metal, CHASSIS);
+            } else if fill == RAISED && size.y <= 7.0 {
+                // A slider's rail is a groove cut into the panel, not a raised strip.
+                rect.fill = Color32::from_rgb(12, 12, 15);
+            } else if rect.corner_radius == CornerRadius::same(KEY_RADIUS)
+                && (10.0..=52.0).contains(&size.y)
+                && fill.a() > 40
+                && fill != WELL
+                && fill != BG
+            {
+                // Lit keys (a toggle that is on, a selected tab) are latched down, like the
+                // play key of a tape deck.
+                let lit = fill.r().max(fill.g()).max(fill.b()) as i32 - fill.r().min(fill.g()).min(fill.b()) as i32 > 50;
+                let mut shapes = key_shapes(rect.rect, KEY_RADIUS as f32, fill, lit || fill == PRESSED);
+                if rect.stroke.width > 0.0 {
+                    shapes.push(Shape::rect_stroke(rect.rect, rect.corner_radius, rect.stroke, StrokeKind::Inside));
+                }
+                *shape = Shape::Vec(shapes);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Turns the flat panels and buttons painted this frame into brushed steel and bevelled
+/// keys. Call once, after everything has been laid out.
+pub fn finish(ctx: &egui::Context) {
+    let Some(metal) = METAL.get().map(|t| t.id()) else { return };
+    let mut layers: Vec<egui::LayerId> = ctx.memory(|m| m.layer_ids().collect());
+    layers.push(egui::LayerId::background());
+    ctx.graphics_mut(|graphics| {
+        for layer in layers {
+            let Some(list) = graphics.get_mut(layer) else { continue };
+            for i in 0..list.next_idx().0 {
+                list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| dress(&mut clipped.shape, metal));
+            }
+        }
+    });
 }

@@ -227,11 +227,11 @@ fn pad_cell(app: &mut App, ui: &mut Ui, rect: Rect, idx: usize) {
     if level > 0.0 {
         p.rect_filled(rect.expand(2.5), radius + 2.0, theme::GREEN.gamma_multiply(0.10 + 0.22 * glow));
     }
-    p.rect_filled(rect, radius, body);
-    if !empty && rect.height() > 40.0 {
-        // A lighter upper half reads as a moulded pad catching the light.
-        let top = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + rect.height() * 0.5));
-        p.rect_filled(top, egui::CornerRadius { nw: radius as u8, ne: radius as u8, sw: 0, se: 0 }, Color32::from_white_alpha(5));
+    if empty {
+        p.rect_filled(rect, radius, body);
+    } else {
+        // A loaded pad is a key like any other, pushed in while it sounds.
+        theme::paint_key(&p, rect, radius, body, level > 0.0);
     }
     let selected = idx == app.selected;
     let border = if rec_target || (armed && blink) {
