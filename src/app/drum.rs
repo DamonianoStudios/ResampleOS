@@ -139,17 +139,11 @@ impl App {
 
     /// Leaves the live synth for the take the pad last played.
     pub fn drum_to_take(&mut self, idx: usize, take: usize) {
-        let p = &mut self.pads[idx];
-        if take >= p.takes.len() {
+        if take >= self.pads[idx].takes.len() {
             return;
         }
-        p.take_idx = take;
-        p.cfg.kind = PadKind::Audio;
-        p.refresh_mini();
-        let (sr, sens) = (self.sr(), self.sensitivity);
-        self.pads[idx].detect_transients(sr, sens);
-        self.push_pad(idx);
-        self.push_sample(idx);
+        self.pads[idx].cfg.kind = PadKind::Audio;
+        self.show_take(idx, take);
         if idx == self.selected && self.tab == Tab::Drum {
             self.tab = Tab::Wave;
         }

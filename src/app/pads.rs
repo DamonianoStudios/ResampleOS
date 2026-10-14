@@ -188,7 +188,6 @@ impl App {
 
     /// Ctrl+Shift+Z / Y: walk this pad's revisions without touching the rest of the project.
     pub fn step_take(&mut self, idx: usize, delta: i32) {
-        let (sr, sens) = (self.sr(), self.sensitivity);
         let p = &mut self.pads[idx];
         if p.takes.is_empty() {
             return;
@@ -206,18 +205,28 @@ impl App {
             self.drum_resynth(idx);
             return;
         }
-        let p = &mut self.pads[idx];
+        let p = &self.pads[idx];
         let to = (p.take_idx as i32 + delta).clamp(0, p.takes.len() as i32 - 1) as usize;
         if to == p.take_idx {
             self.status = format!("{}: no {} take", pad_label(idx), if delta < 0 { "earlier" } else { "later" });
             return;
         }
-        p.take_idx = to;
+        self.show_take(idx, to);
+        self.status = format!("{} take {}/{}", pad_label(idx), to + 1, self.pads[idx].takes.len());
+    }
+
+    /// Makes take `take` the one the pad plays, with the whole of it as the region.
+    pub(super) fn show_take(&mut self, idx: usize, take: usize) {
+        let (sr, sens) = (self.sr(), self.sensitivity);
+        let p = &mut self.pads[idx];
+        if take >= p.takes.len() {
+            return;
+        }
+        p.take_idx = take;
         p.cfg.start = 0;
         p.cfg.end = 0;
         p.detect_transients(sr, sens);
         p.refresh_mini();
-        self.status = format!("{} take {}/{}", pad_label(idx), to + 1, p.takes.len());
         self.push_pad(idx);
         self.push_sample(idx);
     }

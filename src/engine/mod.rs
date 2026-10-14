@@ -14,7 +14,7 @@ use crate::fx::{Fx, FxCtx, FxKind, Svf, svf_g};
 use crate::music::{PPQ, TICKS_PER_BAR, swing_tick};
 use crate::sample::{SampleData, hermite};
 use crate::shared::{MASTER, MAX_PADS, NUM_BUSES, Shared, VOCAL, bus_index, f32_load, f32_store};
-use crate::drum::{DrumVoice, Locks, NO_LOCKS};
+use crate::drum::{Ctx, DrumVoice, Hit, Locks, NO_LOCKS, Rng};
 use crate::synth::SynthVoice;
 use lufs::Lufs;
 use plugin_rt::{PlugEv, PlugNote};
@@ -646,15 +646,6 @@ impl Engine {
     /// Starts a drum synth hit: the patch resolved for this velocity and step, tuned by the
     /// note played, and held to the project scale if the patch asks for it.
     fn start_drum(&mut self, ev: Event, cfg: &PadCfg) {
-        let p = &cfg.drum;
-        let mut rng = crate::drum::Rng(self.drum_seed | 1);
-        let m = p.resolve(ev.vel, &ev.locks, &mut || rng.next());
-        self.drum_seed = rng.0;
-        let mut hz = p.base_hz(&m) * 2f32.powf((ev.semis + cfg.pitch) / 12.0);
-        if p.key_lock {
-            hz = crate::drum::snap_hz(hz, self.scale);
-        }
-        let cut = crate::drum::sync_ticks(p.sync).map_or(0, |t| (t as f64 / PPQ as f64 * 60.0 / self.bpm as f64 * self.sr as f64) as u32);
         if cfg.choke > 0 {
             self.choke(cfg.choke);
         }
@@ -665,10 +656,11 @@ impl Engine {
             }
         }
         self.age += 1;
-        self.drum_seed = self.drum_seed.wrapping_mul(747_796_405).wrapping_add(2_891_336_453);
-        let (age, seed, sr) = (self.age, self.drum_seed, self.sr);
-        let slot = pick(&mut self.drums, |v| v.active, |v| v.age);
-        slot.start(ev.pad, ev.semis, ev.vel, ev.offset, age, p, m, hz, sr, cut, seed);
+        let hit = Hit { pad: ev.pad, note: ev.semis, tune: ev.semis + cfg.pitch, vel: ev.vel, offset: ev.offset, age: self.age, locks: ev.locks };
+        let ctx = Ctx { sr: self.sr, bpm: self.bpm, scale: self.scale };
+        let mut rng = Rng(self.drum_seed | 1);
+        pick(&mut self.drums, |v| v.active, |v| v.age).start(&cfg.drum, &hit, ctx, &mut rng);
+        self.drum_seed = rng.0;
     }
 
     /// Fills `out` (interleaved, `channels` wide) with the next block of audio.

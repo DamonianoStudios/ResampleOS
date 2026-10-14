@@ -212,6 +212,30 @@ const METAL_RATIOS: [f32; 6] = [1.0, 1.4826, 1.8, 2.546, 3.897, 2.63];
 const MEMBRANE: [f32; 8] = [1.0, 1.594, 2.136, 2.296, 2.653, 2.918, 3.156, 3.501];
 const BAR: [f32; 8] = [1.0, 2.756, 5.404, 8.933, 13.34, 18.64, 24.81, 31.87];
 
+/// What starts a hit, apart from the patch.
+pub struct Hit {
+    pub pad: u16,
+    /// The note played, in semitones from middle C. A new hit cuts the last one of the
+    /// same pad and note.
+    pub note: f32,
+    /// Semitones to tune the drum by: the note plus the pad's own pitch.
+    pub tune: f32,
+    pub vel: f32,
+    /// Samples into the next block at which it starts.
+    pub offset: u32,
+    pub age: u64,
+    pub locks: Locks,
+}
+
+/// What a hit needs to know about the project.
+#[derive(Clone, Copy)]
+pub struct Ctx {
+    pub sr: f32,
+    pub bpm: f32,
+    /// Pitch classes of the project scale, for key lock.
+    pub scale: u16,
+}
+
 /// One drum hit sounding. Plain data, so a pool of them lives on the audio thread.
 #[derive(Clone, Copy, Default)]
 pub struct DrumVoice {
@@ -283,28 +307,41 @@ fn drive(x: f32, amount: f32) -> f32 {
 }
 
 impl DrumVoice {
-    /// Starts a hit. `m` are the resolved macros, `hz` the (possibly key-locked)
-    /// fundamental, `cut_at` the synced tail length in samples (0 for none).
-    #[allow(clippy::too_many_arguments)]
-    pub fn start(&mut self, pad: u16, semis: f32, vel: f32, offset: u32, age: u64, p: &DrumParams, m: [f32; 8], hz: f32, sr: f32, cut_at: u32, seed: u32) {
+    /// Starts a hit: resolves the patch for it (velocity, randomness, step locks), tunes
+    /// it, and works out every constant the engine needs. `rng` supplies the randomness
+    /// and moves on.
+    pub fn start(&mut self, p: &DrumParams, hit: &Hit, ctx: Ctx, rng: &mut Rng) {
+        let m = p.resolve(hit.vel, &hit.locks, &mut || rng.next());
+        let mut hz = p.base_hz(&m) * 2f32.powf(hit.tune / 12.0);
+        if p.key_lock {
+            hz = snap_hz(hz, ctx.scale);
+        }
+        let cut_at = sync_ticks(p.sync).map_or(0, |t| (t as f32 / PPQ as f32 * 60.0 / ctx.bpm.max(20.0) * ctx.sr) as u32);
+        rng.next();
         *self = DrumVoice {
             active: true,
-            pad,
-            semis,
-            age,
-            offset,
+            pad: hit.pad,
+            semis: hit.note,
+            age: hit.age,
+            offset: hit.offset,
             fade: 1.0,
             engine: p.engine,
             m,
-            vel: vel.clamp(0.0, 1.0),
+            vel: hit.vel.clamp(0.0, 1.0),
             hz,
-            sr,
+            sr: ctx.sr,
             cut_at,
-            rng: Rng(seed | 1),
+            rng: Rng(rng.0 | 1),
             env: [1.0; 6],
             level: 1.0,
             ..Default::default()
         };
+        self.configure(p);
+    }
+
+    /// The constants each engine works from, from the resolved macros.
+    fn configure(&mut self, p: &DrumParams) {
+        let (m, sr, hz) = (self.m, self.sr, self.hz);
         let k = &mut self.k;
         match p.engine {
             DrumEngine::Kick => {
@@ -558,14 +595,11 @@ pub fn render(p: &DrumParams, sr: f32, scale: u16, bpm: f32) -> SampleData {
 
 /// [`render`], stopping after `max_secs`.
 pub fn render_capped(p: &DrumParams, sr: f32, scale: u16, bpm: f32, max_secs: f32) -> SampleData {
-    let m = p.resolve(0.79, &NO_LOCKS, &mut || 0.0);
-    let mut hz = p.base_hz(&m);
-    if p.key_lock {
-        hz = snap_hz(hz, scale);
-    }
-    let cut = sync_ticks(p.sync).map_or(0, |t| (t as f32 / PPQ as f32 * 60.0 / bpm.max(20.0) * sr) as u32);
+    // No randomness, and a fixed seed for the noise, so a patch always bakes the same.
+    let p = DrumParams { rnd: [0.0; 8], ..*p };
+    let hit = Hit { pad: 0, note: 0.0, tune: 0.0, vel: 0.79, offset: 0, age: 0, locks: NO_LOCKS };
     let mut voice = DrumVoice::default();
-    voice.start(0, 0.0, 0.79, 0, 0, p, m, hz, sr, cut, 0x1234_5679);
+    voice.start(&p, &hit, Ctx { sr, bpm, scale }, &mut Rng(0x1234_5679));
     let (mut l, mut r) = (Vec::new(), Vec::new());
     let block = 512;
     while voice.active && l.len() < (sr * max_secs) as usize {

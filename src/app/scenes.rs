@@ -278,15 +278,39 @@ impl App {
         }
         let entry = self.chain.remove(from);
         self.chain.insert(to, entry);
-        let pos = self.chain_pos;
-        self.chain_pos = if pos == from {
-            to
-        } else if from < pos && to >= pos {
-            pos - 1
-        } else if from > pos && to <= pos {
-            pos + 1
-        } else {
-            pos
-        };
+        self.chain_pos = index_after_move(self.chain_pos, from, to);
+    }
+}
+
+/// Where the entry at `at` ends up when the entry at `from` is moved to `to`.
+fn index_after_move(at: usize, from: usize, to: usize) -> usize {
+    if at == from {
+        to
+    } else if from < at && to >= at {
+        at - 1
+    } else if from > at && to <= at {
+        at + 1
+    } else {
+        at
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::index_after_move;
+
+    #[test]
+    fn moving_a_chain_entry_keeps_track_of_every_other() {
+        // Check against actually moving the entries of a list, for every case of four.
+        for from in 0..4 {
+            for to in 0..4 {
+                let mut list: Vec<usize> = (0..4).collect();
+                let e = list.remove(from);
+                list.insert(to, e);
+                for at in 0..4 {
+                    assert_eq!(list[index_after_move(at, from, to)], at, "{at} after moving {from} to {to}");
+                }
+            }
+        }
     }
 }

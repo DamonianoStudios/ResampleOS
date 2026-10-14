@@ -419,12 +419,7 @@ fn stereo_image(app: &App, ui: &Ui, rect: Rect) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 8.0, theme::WELL);
     p.rect_stroke(rect, 8.0, Stroke::new(1.0, Color32::BLACK), StrokeKind::Inside);
-    let source = match app.ring_src {
-        0 => "MASTER".to_string(),
-        5 => "INPUT".to_string(),
-        6 => "BUS V".to_string(),
-        s => format!("BUS {s}"),
-    };
+    let source = super::footer::src_name(app.ring_src).to_uppercase();
     let ring = &app.shared.ring;
     let window = (app.shared.sample_rate as f32 * 0.05) as u64;
     let now = ring.written();

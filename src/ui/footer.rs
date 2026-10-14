@@ -126,7 +126,8 @@ fn meters(app: &mut App, ui: &mut Ui) {
     }
 }
 
-fn src_name(s: u8) -> String {
+/// What the skip-back buffer records, for `RingSource`'s numbering.
+pub(super) fn src_name(s: u8) -> String {
     match s {
         0 => "Master".into(),
         5 => "Input".into(),
