@@ -306,6 +306,13 @@ pub enum AutoTarget {
     PadVol(u16),
     PadPan(u16),
     PadCutoff(u16),
+    /// One of a drum pad's eight knobs, [`crate::drum::DrumParams::m`].
+    DrumMacro { pad: u16, m: u8 },
+    /// A parameter of the plugin a pad plays, by the plugin's own id. Lane values are the
+    /// parameter's normalized range.
+    PadPlugin { pad: u16, id: u32 },
+    /// A parameter of a bus effect plugin; `slot` is `bus * 3 + slot`.
+    FxPlugin { slot: u8, id: u32 },
 }
 
 /// Highest level a bus or pad reaches; a lane value of 1 is this.
@@ -317,7 +324,7 @@ impl AutoTarget {
         match self {
             AutoTarget::BusLevel(_) | AutoTarget::PadVol(_) => v * LEVEL_MAX,
             AutoTarget::BusPan(_) | AutoTarget::PadPan(_) => v * 2.0 - 1.0,
-            AutoTarget::BusParam { .. } | AutoTarget::PadCutoff(_) => v,
+            _ => v,
         }
     }
 
@@ -326,7 +333,7 @@ impl AutoTarget {
         match self {
             AutoTarget::BusLevel(_) | AutoTarget::PadVol(_) => v / LEVEL_MAX,
             AutoTarget::BusPan(_) | AutoTarget::PadPan(_) => (v + 1.0) * 0.5,
-            AutoTarget::BusParam { .. } | AutoTarget::PadCutoff(_) => v,
+            _ => v,
         }
         .clamp(0.0, 1.0)
     }
@@ -337,10 +344,35 @@ pub struct AutoPoint {
     /// Ticks from the start of the loop.
     pub tick: u32,
     pub value: f32,
+    /// Bend of the segment that leaves this point, -1..1: 0 is a straight line, positive
+    /// values ease in (slow start, fast finish) and negative ones ease out.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub curve: f32,
 }
 
-/// One control's movement through a loop: straight lines between points, holding the
-/// first point's value before it and the last one's after it.
+fn is_zero(v: &f32) -> bool {
+    *v == 0.0
+}
+
+impl AutoPoint {
+    pub fn new(tick: u32, value: f32) -> Self {
+        AutoPoint { tick, value, curve: 0.0 }
+    }
+}
+
+/// Where a segment with bend `curve` is at fraction `t` of the way along it, both 0..1.
+pub fn bend(t: f32, curve: f32) -> f32 {
+    if curve.abs() < 1e-3 {
+        return t;
+    }
+    // A power curve whose exponent runs from 1/8 to 8; bent one way, then mirrored for
+    // the other so equal and opposite bends look alike.
+    let e = 8f32.powf(curve.abs());
+    if curve > 0.0 { t.powf(e) } else { 1.0 - (1.0 - t).powf(e) }
+}
+
+/// One control's movement through a loop: lines (straight or bent) between points,
+/// holding the first point's value before it and the last one's after it.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct AutoLane {
     pub target: AutoTarget,
@@ -361,7 +393,7 @@ impl AutoLane {
             Some(i) => {
                 let (a, b) = (pts[i - 1], pts[i]);
                 let t = ((tick - a.tick as f64) / (b.tick - a.tick).max(1) as f64) as f32;
-                a.value + (b.value - a.value) * t
+                a.value + (b.value - a.value) * bend(t.clamp(0.0, 1.0), a.curve)
             }
         })
     }
@@ -383,7 +415,57 @@ pub struct SceneSwap {
     pub automation: Option<Automation>,
 }
 
+/// One clip as the engine plays it: a stretch of song time playing a pattern, repeated
+/// to fill it, starting `offset` ticks into the pattern.
+pub struct SongClip {
+    pub start: u64,
+    pub len: u64,
+    pub offset: u64,
+    pub pattern: Arc<Pattern>,
+}
+
+impl SongClip {
+    pub fn end(&self) -> u64 {
+        self.start + self.len
+    }
+}
+
+/// A pad's clips, in order of start and never overlapping.
+pub struct SongTrack {
+    pub pad: u16,
+    pub clips: Vec<SongClip>,
+}
+
+/// A stretch of the song that came from a loop, and that loop's automation, which plays
+/// through it as the loop goes round (`loop_len` ticks).
+pub struct SongSection {
+    pub start: u64,
+    pub len: u64,
+    pub loop_len: u64,
+    pub automation: Option<Automation>,
+}
+
+/// The arrangement, flattened for the engine: what each pad plays when.
+#[derive(Default)]
+pub struct ArrangementPlan {
+    pub tracks: Vec<SongTrack>,
+    /// In order of start.
+    pub sections: Vec<SongSection>,
+}
+
+pub enum SongCmd {
+    /// The arrangement to play in song mode.
+    Plan(Option<Arc<ArrangementPlan>>),
+    /// Song mode on (the pads play the arrangement) or off (they play their loop).
+    Mode(bool),
+    /// Move the song playhead, in ticks.
+    Locate(f64),
+    /// The loop brace, as (start, end) in ticks.
+    Brace(Option<(f64, f64)>),
+}
+
 pub enum Cmd {
+    Song(SongCmd),
     /// Length of the playing loop; the transport wraps here. 0 = never.
     SceneLen(u32),
     /// Line up the next loop, or cancel the one lined up.
@@ -393,6 +475,9 @@ pub enum Cmd {
     SetPadPlugin { pad: u16, plugin: Option<Box<PluginRt>> },
     /// `slot` is `bus * 3 + slot`.
     SetFxPlugin { slot: u8, plugin: Option<Box<PluginRt>> },
+    /// An analyzer plugin, and the bus it watches (its output, after the fader). What the
+    /// plugin puts out is thrown away: it only listens.
+    SetAnalyzer { slot: u8, plugin: Option<Box<PluginRt>>, source: u8 },
     PadOn { pad: u16, vel: f32, semis: f32, key: u32 },
     PadOff { pad: u16, key: u32 },
     SetPadCfg { pad: u16, cfg: PadCfg },
@@ -421,6 +506,8 @@ pub enum Cmd {
     Roll { on: bool, ticks: u32 },
     /// Silence everything now: voices, held notes and built-in effect tails.
     Panic,
+    /// Play the latency test signal on the output. See [`crate::latency`].
+    Ping,
 }
 
 /// Things the audio thread must not free itself; shipped back to the UI to drop.
@@ -430,6 +517,7 @@ pub enum Garbage {
     Pattern(Arc<Pattern>),
     Scene(Box<SceneSwap>),
     Automation(Automation),
+    Song(Arc<ArrangementPlan>),
     Input(Consumer<f32>),
     Plugin(Box<PluginRt>),
 }

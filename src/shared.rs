@@ -116,6 +116,9 @@ impl SkipBack {
 
 /// Seconds of dry input kept for vocal takes: enough for sixteen bars at 40 BPM, or a
 /// free pass of three minutes.
+/// Plugin slots for analyzers (spectrum, loudness, stereo meters), fed a copy of a bus.
+pub const NUM_ANALYZERS: usize = 4;
+
 pub const INPUT_RING_SECS: usize = 180;
 
 pub struct Shared {
@@ -138,8 +141,11 @@ pub struct Shared {
     pub lufs_momentary: AtomicU32,
     pub lufs_short: AtomicU32,
     pub playing: AtomicBool,
-    /// Transport position in ticks from the start of the playing loop (f64 bits).
+    /// Transport position in ticks from the start of the playing loop (f64 bits); in
+    /// song mode, from the start of the song.
     pub tick: AtomicU64,
+    /// Where the song playhead is, in ticks (f64 bits), in either mode.
+    pub song_pos: AtomicU64,
     /// The clocks LFOs run from, for drawing them: ticks at the project tempo (from Play
     /// while the transport runs) and seconds since the engine started. Both f64 bits.
     pub lfo_ticks: AtomicU64,
@@ -150,6 +156,12 @@ pub struct Shared {
     pub scene_index: AtomicU32,
     /// Fraction of the audio callback budget used, 0..1.
     pub load: AtomicU32,
+    /// Position in `input_ring` at which the last latency test signal started, `u64::MAX`
+    /// before one has played. See [`crate::latency`].
+    pub ping_frame: AtomicU64,
+    /// Bus effect plugins (`bus * 3 + slot`) that have stopped passing any audio and are
+    /// being passed by.
+    pub fx_silent: [AtomicBool; NUM_BUSES * 3],
 
     // Written by the UI, read by the MIDI thread so pad hits bypass the UI frame clock.
     pub ui_bank: AtomicU32,
@@ -179,11 +191,14 @@ impl Shared {
             lufs_short: AtomicU32::new((-70f32).to_bits()),
             playing: AtomicBool::new(false),
             tick: AtomicU64::new(0),
+            song_pos: AtomicU64::new(0),
             lfo_ticks: AtomicU64::new(0),
             lfo_secs: AtomicU64::new(0),
             scene_starts: AtomicU32::new(0),
             scene_index: AtomicU32::new(0),
             load: AtomicU32::new(0),
+            ping_frame: AtomicU64::new(u64::MAX),
+            fx_silent: std::array::from_fn(|_| AtomicBool::new(false)),
             ui_bank: AtomicU32::new(0),
             ui_selected: AtomicU32::new(0),
             ui_chromatic: AtomicBool::new(false),

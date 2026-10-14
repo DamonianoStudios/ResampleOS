@@ -25,6 +25,7 @@ pub struct Snapshot {
     /// loops, which only changes where the patterns are kept, is not an edit.
     scenes: Vec<Scene>,
     chain: Vec<usize>,
+    arrangement: Arrangement,
     vocal_fx: crate::engine::VocalFx,
 }
 
@@ -37,11 +38,18 @@ impl Snapshot {
 #[derive(Default)]
 pub struct History {
     committed: Option<Snapshot>,
+    /// The state when the project was last saved, opened or started.
+    saved: Option<Snapshot>,
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
 }
 
 impl History {
+    /// Counts the project as unsaved, as one carried across a restart may be.
+    pub fn forget_saved(&mut self) {
+        self.saved = None;
+    }
+
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
@@ -61,6 +69,7 @@ impl App {
             pads,
             scenes: self.scenes_complete(),
             chain: self.chain.clone(),
+            arrangement: self.arrangement.clone(),
             vocal_fx: self.vocal_fx,
             banks: self.banks,
             bpm: self.bpm,
@@ -80,6 +89,7 @@ impl App {
             || self.pads.len() != s.pads.len()
             || self.fx_plugins.iter().map(|p| p.as_ref().map(PluginSlot::id)).ne(s.fx_ids())
             || self.chain != s.chain
+            || self.arrangement != s.arrangement
             || self.vocal_fx != s.vocal_fx
             || self.scenes.len() != s.scenes.len()
             || self.pads.iter().zip(&s.pads).any(|(a, b)| !a.same_as(b, false))
@@ -96,7 +106,18 @@ impl App {
 
     /// Forgets all history and treats the current state as the starting point.
     pub fn reset_history(&mut self) {
-        self.history = History { committed: Some(self.snapshot()), ..History::default() };
+        let now = self.snapshot();
+        self.history = History { committed: Some(now.clone()), saved: Some(now), ..History::default() };
+    }
+
+    /// Records the project as it is now as saved.
+    pub fn mark_saved(&mut self) {
+        self.history.saved = Some(self.snapshot());
+    }
+
+    /// True if the project has changed since it was last saved, opened or started.
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.history.saved.as_ref().is_none_or(|s| self.differs_from(s))
     }
 
     /// Called once per frame, after the UI has run.
@@ -160,6 +181,9 @@ impl App {
         }
         self.scenes = s.scenes;
         self.chain = s.chain;
+        self.arrangement = s.arrangement;
+        self.arr.selected.clear();
+        self.arr.section = None;
         self.vocal_fx = s.vocal_fx;
         self.vocal.selected = None;
         self.chain_pos = 0;

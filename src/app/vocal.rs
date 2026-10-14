@@ -188,6 +188,58 @@ impl App {
         }
     }
 
+    /// Starts measuring the input latency: plays the test signal and listens for it on
+    /// the input. Needs the output to reach the input, by cable or through the air.
+    pub fn measure_latency(&mut self) {
+        if self.input_sel.is_none() {
+            self.status = "Choose an input first, then measure with the output reaching it (a loopback cable, or the mic near a speaker).".into();
+            return;
+        }
+        if self.latency_probe.is_some() {
+            return;
+        }
+        // Monitoring the input would send the test signal round again.
+        self.latency_probe = Some((std::time::Instant::now(), self.input_dest));
+        self.send(Cmd::InputCfg { dest: 0, gain: self.input_gain });
+        self.shared.ping_frame.store(u64::MAX, Ordering::Relaxed);
+        self.send(Cmd::Ping);
+        self.status = "Measuring input latency…".into();
+    }
+
+    /// Finishes a latency measurement once enough of the input has come in.
+    pub(super) fn latency_poll(&mut self) {
+        let Some((started, dest)) = self.latency_probe else { return };
+        let sr = self.sr();
+        let from = self.shared.ping_frame.load(Ordering::Relaxed);
+        let need = (crate::latency::LISTEN_SECS * sr) as u64;
+        let ready = from != u64::MAX && self.shared.input_ring.written() >= from + need;
+        if !ready && started.elapsed().as_secs_f32() < crate::latency::LISTEN_SECS + 3.0 {
+            return;
+        }
+        self.latency_probe = None;
+        self.send(Cmd::InputCfg { dest, gain: self.input_gain });
+        if !ready {
+            self.status = "Latency measurement got no audio back from the engine; is the audio device running?".into();
+            return;
+        }
+        let (l, r) = self.shared.input_ring.read(from, from + need);
+        let mono: Vec<f32> = l.iter().zip(&r).map(|(a, b)| (a + b) * 0.5).collect();
+        self.status = match crate::latency::measure(&mono, sr) {
+            Some(found) if found.confidence >= 0.5 => {
+                let ms = found.samples as f32 / sr * 1000.0;
+                self.prefs.input_latency_ms = ms;
+                self.prefs_edit.input_latency_ms = ms;
+                let _ = self.prefs.save();
+                format!("Input latency measured: {ms:.1} ms ({} samples). Takes are now moved earlier by that much.", found.samples)
+            }
+            Some(found) => format!(
+                "Heard something, but not clearly enough to trust (best guess {:.1} ms). Try a loopback cable, or turn the speaker up a little.",
+                found.samples as f32 / sr * 1000.0
+            ),
+            None => "Did not hear the test signal on the input. Connect an output to the input (or hold the mic near a speaker) and try again.".into(),
+        };
+    }
+
     /// Frames the input arrives late by, from the preference.
     fn latency_frames(&self) -> u64 {
         (self.prefs.input_latency_ms.max(0.0) / 1000.0 * self.sr()) as u64
@@ -411,7 +463,9 @@ impl App {
                 let tx = self.jobs_tx.clone();
                 self.busy += 1;
                 std::thread::spawn(move || {
-                    let sample = stretch::conform(&audio, &[], 1.0, semis, sr);
+                    // A double sung higher or lower should still sound like the same singer.
+                    let w = stretch::Warp { mode: stretch::WarpMode::Elastic, ratio: 1.0, semis, formants: true };
+                    let sample = stretch::warp(&audio, &[], w, sr);
                     let _ = tx.send(JobResult::Shifted { key, pad, sample });
                 });
             }

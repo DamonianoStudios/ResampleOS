@@ -42,17 +42,19 @@ fn toolbar(app: &mut App, ui: &mut Ui) {
     let mut cfg = before;
     let mut pattern_changed = false;
 
-    ui.horizontal_wrapped(|ui| {
+    // One row however narrow the window: it scrolls sideways rather than wrap, so the
+    // note grid keeps its height.
+    egui::ScrollArea::horizontal().id_salt("roll_toolbar").show(ui, |ui| ui.horizontal(|ui| {
         if cfg.kind == PadKind::Midi {
             ui.label("Engine");
             let mut browse = false;
             let label = match (&app.pads[sel].plugin, cfg.target) {
-                (Some(p), MidiTarget::Plugin) => format!("VST3: {}", p.name),
+                (Some(p), MidiTarget::Plugin) => format!("Plugin: {}", p.name),
                 _ => app.midi_target_label(cfg.target),
             };
             egui::ComboBox::from_id_salt("roll_target").width(150.0).selected_text(label).show_ui(ui, |ui| {
                 ui.selectable_value(&mut cfg.target, MidiTarget::Synth, "Internal synth");
-                if ui.selectable_label(cfg.target == MidiTarget::Plugin, "VST3 instrument…").clicked() {
+                if ui.selectable_label(cfg.target == MidiTarget::Plugin, "Plugin instrument…").clicked() {
                     browse = true;
                 }
                 for i in 0..app.pads.len() {
@@ -157,7 +159,23 @@ fn toolbar(app: &mut App, ui: &mut Ui) {
             app.pads[sel].pattern.notes.clear();
             pattern_changed = true;
         }
-    });
+        ui.separator();
+        if ui
+            .button("Randomize vel")
+            .on_hover_text("Moves each velocity a random amount, up to the figure beside it either way: the selected notes, or all of them when none is selected")
+            .clicked()
+        {
+            app.roll_randomize_velocity();
+        }
+        let mut amount = app.roll.vel_random * 100.0;
+        if ui
+            .add(egui::DragValue::new(&mut amount).speed(0.5).range(1.0..=100.0).fixed_decimals(0).prefix("±").suffix("%"))
+            .on_hover_text("How far Randomize may move a velocity")
+            .changed()
+        {
+            app.roll.vel_random = amount / 100.0;
+        }
+    }));
     if cfg != before {
         // Leaving the plugin target by hand unloads the instrument.
         if before.target == MidiTarget::Plugin && cfg.target != MidiTarget::Plugin && app.pads[sel].plugin.is_some() {
@@ -522,16 +540,17 @@ fn edit(app: &mut App, ui: &Ui, resp: &egui::Response, v: &View, snap: &Snap) ->
             let notes = &app.pads[sel].pattern.notes;
             app.roll.sel = (0..count).filter(|&i| v.note_rect(&notes[i]).intersects(band)).collect();
         }
-        // Dragging in the velocity lane paints velocities.
+        // Dragging in the velocity lane moves the stack under the pointer.
         if let (true, None, Some(pos)) = (app.roll.drag.is_none(), app.roll.marquee, pointer)
             && origin.is_some_and(|o| v.lane.contains(o))
         {
-            changed |= set_velocity(&mut app.pads[sel].pattern.notes, pos, v);
+            changed |= drag_velocity(app, sel, pos, v);
         }
     }
 
     if resp.drag_stopped() {
         app.roll.marquee = None;
+        app.roll.vel_drag = None;
         if let Some(d) = app.roll.drag.take() {
             if let Some(n) = app.pads[sel].pattern.notes.get(d.idx) {
                 app.roll.last_len = n.len;
@@ -566,7 +585,8 @@ fn edit(app: &mut App, ui: &Ui, resp: &egui::Response, v: &View, snap: &Snap) ->
                 }
             }
         } else if v.lane.contains(pos) {
-            changed |= set_velocity(&mut app.pads[sel].pattern.notes, pos, v);
+            changed |= drag_velocity(app, sel, pos, v);
+            app.roll.vel_drag = None;
         } else if pos.x < v.grid.left() && pos.y > v.grid.top() {
             audition = Some(v.pitch_at(pos.y).clamp(0, 127) as u8);
         }
@@ -625,21 +645,33 @@ fn drag_notes(notes: &mut [Note], d: &RollDrag, pos: Pos2, v: &View, snap: &Snap
 /// Notes, their velocity stems, the selection box and the playhead.
 fn paint_notes(app: &App, p: &egui::Painter, v: &View, pointer: Option<Pos2>) {
     let lane = v.lane;
-    for (i, n) in app.pads[app.selected].pattern.notes.iter().enumerate() {
+    let selected = app.roll_selected();
+    let notes = &app.pads[app.selected].pattern.notes;
+    for (i, n) in notes.iter().enumerate() {
         let level = n.vel as f32 / 127.0;
         let r = v.note_rect(n).intersect(v.grid);
         if r.height() >= 2.0 && r.width() > 0.0 {
             p.rect_filled(r, 2.0, theme::CYAN.gamma_multiply(0.45 + 0.55 * level));
-            if app.roll.sel.contains(&i) {
+            if selected.contains(&i) {
                 p.rect_filled(r, 2.0, Color32::from_white_alpha(70));
                 p.rect_stroke(r, 2.0, Stroke::new(1.5, theme::TEXT), StrokeKind::Inside);
             } else {
                 p.rect_stroke(r, 2.0, Stroke::new(1.0, theme::CYAN_DIM), StrokeKind::Inside);
             }
         }
-        let stem = (lane.height() - 6.0) * level;
+    }
+    // Stems, each with a dot at its height so the notes of a chord can be told apart,
+    // the selected ones drawn last and brightest.
+    let order = (0..notes.len()).filter(|i| !selected.contains(i)).chain(selected.iter().copied().filter(|&i| i < notes.len()));
+    for i in order {
+        let n = &notes[i];
+        let level = n.vel as f32 / 127.0;
+        let top = lane.bottom() - (lane.height() - 6.0) * level;
         let x = v.x_of(n.start as f32) + 1.0;
-        p.vline(x, lane.bottom() - stem..=lane.bottom(), Stroke::new(3.0, theme::CYAN.gamma_multiply(0.5 + 0.5 * level)));
+        let picked = selected.contains(&i);
+        let colour = if picked { theme::TEXT } else { theme::CYAN.gamma_multiply(0.5 + 0.5 * level) };
+        p.vline(x, top..=lane.bottom(), Stroke::new(if picked { 2.0 } else { 3.0 }, colour));
+        p.circle_filled(Pos2::new(x, top), if picked { 3.5 } else { 2.5 }, colour);
     }
     if let (Some(from), Some(pos)) = (app.roll.marquee, pointer) {
         let band = Rect::from_two_pos(from, pos).intersect(v.grid);
@@ -652,19 +684,80 @@ fn paint_notes(app: &App, p: &egui::Painter, v: &View, pointer: Option<Pos2>) {
     }
 }
 
-/// Sets the velocity of the note whose stem is nearest the pointer in the velocity lane.
-fn set_velocity(notes: &mut [Note], pos: Pos2, v: &View) -> bool {
-    let vel = ((((v.lane.bottom() - pos.y) / (v.lane.height() - 6.0)).clamp(0.01, 1.0) * 127.0) as u8).max(1);
-    let nearest = notes
-        .iter_mut()
-        .map(|n| ((v.x_of(n.start as f32) - pos.x).abs(), n))
+/// The velocity a pointer height in the lane stands for.
+fn lane_velocity(pos: Pos2, v: &View) -> u8 {
+    ((((v.lane.bottom() - pos.y) / (v.lane.height() - 6.0)).clamp(0.01, 1.0) * 127.0) as u8).max(1)
+}
+
+/// The notes a velocity edit at `pos` reaches: the stack (every note starting at one
+/// tick) whose stem is nearest the pointer, or only the selected notes in it if any are.
+fn velocity_targets(notes: &[Note], selected: &[usize], pos: Pos2, v: &View) -> Option<(u32, Vec<usize>)> {
+    let (_, tick) = notes
+        .iter()
+        .map(|n| ((v.x_of(n.start as f32) - pos.x).abs(), n.start))
         .filter(|(d, _)| *d < 8.0)
-        .min_by(|a, b| a.0.total_cmp(&b.0));
-    match nearest {
-        Some((_, n)) if n.vel != vel => {
+        .min_by(|a, b| a.0.total_cmp(&b.0))?;
+    let stack: Vec<usize> = (0..notes.len()).filter(|&i| notes[i].start == tick).collect();
+    let chosen: Vec<usize> = stack.iter().copied().filter(|i| selected.contains(i)).collect();
+    Some((tick, if chosen.is_empty() { stack } else { chosen }))
+}
+
+/// Sets velocities from the pointer in the velocity lane. The loudest note of the stack
+/// goes where the pointer is and the others move with it, keeping a chord's voicing;
+/// moving to another stack mid-drag carries on there.
+fn drag_velocity(app: &mut App, sel: usize, pos: Pos2, v: &View) -> bool {
+    let selected = app.roll_selected().to_vec();
+    let notes = &mut app.pads[sel].pattern.notes;
+    let Some((tick, targets)) = velocity_targets(notes, &selected, pos, v) else { return false };
+    // The velocities as the drag found them, so clamping at the ends loses no voicing.
+    if app.roll.vel_drag.as_ref().is_none_or(|(t, orig)| *t != tick || orig.iter().map(|o| o.0).ne(targets.iter().copied())) {
+        app.roll.vel_drag = Some((tick, targets.iter().map(|&i| (i, notes[i].vel)).collect()));
+    }
+    let Some((_, orig)) = &app.roll.vel_drag else { return false };
+    let top = orig.iter().map(|o| o.1).max().unwrap_or(1) as i32;
+    let shift = lane_velocity(pos, v) as i32 - top;
+    let mut changed = false;
+    for &(i, was) in orig {
+        if let Some(n) = notes.get_mut(i) {
+            let vel = (was as i32 + shift).clamp(1, 127) as u8;
+            changed |= n.vel != vel;
             n.vel = vel;
-            true
         }
-        _ => false,
+    }
+    changed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn view() -> View {
+        let rect = Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 400.0));
+        View {
+            rect,
+            grid: Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1000.0, 300.0)),
+            lane: Rect::from_min_max(Pos2::new(0.0, 300.0), Pos2::new(1000.0, 400.0)),
+            top: 84,
+            len: 1920,
+            t0: 0.0,
+            span: 1920.0,
+        }
+    }
+
+    #[test]
+    fn a_velocity_edit_reaches_the_whole_stack_or_just_the_selected_notes() {
+        let v = view();
+        // A three-note chord at the downbeat and a single note at beat 3.
+        let notes = vec![Note::new(0, 240, 60, 100), Note::new(0, 240, 64, 80), Note::new(0, 240, 67, 60), Note::new(960, 240, 62, 90)];
+        let at_chord = Pos2::new(v.x_of(0.0) + 2.0, 350.0);
+        assert_eq!(velocity_targets(&notes, &[], at_chord, &v), Some((0, vec![0, 1, 2])));
+        // With one of the chord's notes selected, only it moves.
+        assert_eq!(velocity_targets(&notes, &[1], at_chord, &v), Some((0, vec![1])));
+        // A selection elsewhere doesn't narrow this stack.
+        assert_eq!(velocity_targets(&notes, &[3], at_chord, &v), Some((0, vec![0, 1, 2])));
+        let at_single = Pos2::new(v.x_of(960.0), 350.0);
+        assert_eq!(velocity_targets(&notes, &[], at_single, &v), Some((960, vec![3])));
+        // Nowhere near a stem: nothing.
+        assert_eq!(velocity_targets(&notes, &[], Pos2::new(v.x_of(480.0), 350.0), &v), None);
     }
 }

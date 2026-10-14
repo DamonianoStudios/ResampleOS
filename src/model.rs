@@ -5,25 +5,31 @@ use crate::analysis::{self, Analysis};
 use crate::engine::{MidiTarget, PadCfg, PadKind, Pattern};
 use crate::sample::SampleData;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use vst3_host::Plugin;
+use crate::hosted::{Param, PluginHandle};
+use std::sync::Arc;
 
 pub const MAX_TAKES: usize = 16;
 
-/// A loaded VST3 instance. The engine holds a second handle to the same plugin.
+/// A loaded plugin instance (VST3 or CLAP). The engine holds a second handle to it.
 #[derive(Clone)]
 pub struct PluginSlot {
     pub path: PathBuf,
     /// Which plugin inside the file, for files that hold several.
     pub class_id: Option<String>,
     pub name: String,
-    pub handle: Arc<Mutex<Plugin>>,
+    pub handle: PluginHandle,
+    /// The parameters automation can move, read when the plugin was loaded.
+    pub params: Arc<Vec<Param>>,
 }
 
 impl PluginSlot {
     /// Identity of the instance, used to match editor windows to slots.
     pub fn id(&self) -> usize {
-        Arc::as_ptr(&self.handle) as usize
+        self.handle.id()
+    }
+
+    pub fn param_name(&self, id: u32) -> Option<&str> {
+        self.params.iter().find(|p| p.id == id).map(|p| p.name.as_str())
     }
 }
 

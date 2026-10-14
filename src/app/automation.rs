@@ -1,4 +1,4 @@
-//! Automation: lanes that move bus and pad controls through a loop.
+//! Automation: lanes that move bus, pad, drum and plugin controls through a loop.
 //!
 //! Each loop has its own lanes, kept on the loop itself, so they switch with it on the beat
 //! and are saved and undone with it. A lane is drawn in the Automation tab, or recorded by
@@ -8,9 +8,22 @@
 
 use super::*;
 use crate::engine::{AutoLane, AutoPoint, AutoTarget};
+use crate::hosted::Edit;
 
 /// Grid lane points are placed on: (name, ticks). 1 or less is free.
 pub const AUTO_SNAPS: [(&str, u32); 5] = [("Off", 1), ("1/4", PPQ), ("1/8", PPQ / 2), ("1/16", PPQ / 4), ("1/32", PPQ / 8)];
+
+impl PluginTarget {
+    /// The lane target for parameter `id` of the plugin here. Analyzers only listen, so
+    /// there is nothing of theirs to automate.
+    pub fn param_target(self, id: u32) -> Option<AutoTarget> {
+        match self {
+            PluginTarget::Pad(i) => Some(AutoTarget::PadPlugin { pad: i as u16, id }),
+            PluginTarget::Fx(b, s) => Some(AutoTarget::FxPlugin { slot: (b * 3 + s) as u8, id }),
+            PluginTarget::Analyzer(_) => None,
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct AutoUi {
@@ -21,6 +34,12 @@ pub struct AutoUi {
     pub drag: Option<(usize, usize)>,
     /// Where each control being recorded was last written this gesture, in ticks.
     pub writing: Vec<(AutoTarget, f64)>,
+    /// The plugin parameter last moved in a plugin's own editor, for "Automate last touched".
+    pub touched: Option<AutoTarget>,
+    /// Filter for the plugin parameter lists in the Add lane menu.
+    pub query: String,
+    /// The bend handle being dragged: (lane, point the segment leaves).
+    pub bend: Option<(usize, usize)>,
 }
 
 impl App {
@@ -35,6 +54,7 @@ impl App {
 
     /// Sends the engine the playing loop's lanes.
     pub fn push_automation(&mut self) {
+        self.arr.dirty = true;
         let lanes = &self.scenes[self.scene].automation;
         let automation = (!lanes.is_empty()).then(|| Arc::new(lanes.clone()));
         self.send(Cmd::SetAutomation(automation));
@@ -57,7 +77,7 @@ impl App {
     pub fn automate(&mut self, target: AutoTarget) {
         if !self.lanes().iter().any(|l| l.target == target) {
             let value = self.control_value(target);
-            self.edit_lanes(|lanes| lanes.push(AutoLane { target, points: vec![AutoPoint { tick: 0, value }] }));
+            self.edit_lanes(|lanes| lanes.push(AutoLane { target, points: vec![AutoPoint::new(0, value)] }));
         }
         self.tab = Tab::Auto;
         self.status = format!("Automating {} in this loop. Draw it here, or turn it with Rec on while playing.", self.target_name(target));
@@ -75,8 +95,45 @@ impl App {
             AutoTarget::PadVol(p) => self.pads[p as usize].cfg.vol,
             AutoTarget::PadPan(p) => self.pads[p as usize].cfg.pan,
             AutoTarget::PadCutoff(p) => self.pads[p as usize].cfg.cutoff,
+            AutoTarget::DrumMacro { pad, m } => self.pads[pad as usize].cfg.drum.m[(m as usize).min(7)],
+            AutoTarget::PadPlugin { id, .. } | AutoTarget::FxPlugin { id, .. } => {
+                self.plugin_of(target).and_then(|s| s.handle.parameter(id)).unwrap_or(0.5) as f32
+            }
         };
         target.scale_down(v)
+    }
+
+    /// The plugin a plugin-parameter lane moves.
+    pub fn plugin_of(&self, target: AutoTarget) -> Option<&crate::model::PluginSlot> {
+        match target {
+            AutoTarget::PadPlugin { pad, .. } => self.plugin_slot(PluginTarget::Pad(pad as usize)),
+            AutoTarget::FxPlugin { slot, .. } => self.plugin_slot(PluginTarget::Fx(slot as usize / 3, slot as usize % 3)),
+            _ => None,
+        }
+    }
+
+    /// The lane target for parameter `param` of the plugin instance `instance`.
+    fn plugin_target(&self, instance: usize, param: u32) -> Option<AutoTarget> {
+        self.automatable_plugins().into_iter().find(|(_, s)| s.id() == instance).and_then(|(at, _)| at.param_target(param))
+    }
+
+    /// Moves made in plugin editors since the last frame: the last one is remembered for
+    /// "Automate last touched", and with Rec on and the transport running they are recorded.
+    pub(super) fn plugin_edits(&mut self, edits: Vec<(usize, Edit)>) {
+        for (instance, edit) in edits {
+            match edit {
+                Edit::Value(param, v) => {
+                    let Some(target) = self.plugin_target(instance, param) else { continue };
+                    self.auto.touched = Some(target);
+                    self.record_control(target, v as f32);
+                }
+                Edit::End(param) => {
+                    if let Some(target) = self.plugin_target(instance, param) {
+                        self.auto.writing.retain(|(t, _)| *t != target);
+                    }
+                }
+            }
+        }
     }
 
     /// "Bus 1 · FET Comp · Thresh", "A03 Snare · Vol".
@@ -99,10 +156,30 @@ impl App {
                     AutoTarget::PadPan(_) => "Pan",
                     _ => "Cutoff",
                 };
-                let name = &self.pads[p as usize].name;
-                format!("{}{}{} · {what}", pad_label(p as usize), if name.is_empty() { "" } else { " " }, name)
+                format!("{} · {what}", self.pad_title(p as usize))
+            }
+            AutoTarget::DrumMacro { pad, m } => {
+                let names = self.pads[pad as usize].cfg.drum.engine.macros();
+                format!("{} · {}", self.pad_title(pad as usize), names[(m as usize).min(7)])
+            }
+            AutoTarget::PadPlugin { pad, id } => {
+                let slot = self.plugin_of(target);
+                let param = slot.and_then(|s| s.param_name(id)).map_or_else(|| format!("#{id}"), str::to_string);
+                format!("{} · {} · {param}", pad_label(pad as usize), slot.map_or("no plugin", |s| s.name.as_str()))
+            }
+            AutoTarget::FxPlugin { slot: at, id } => {
+                let slot = self.plugin_of(target);
+                let param = slot.and_then(|s| s.param_name(id)).map_or_else(|| format!("#{id}"), str::to_string);
+                let bus = crate::shared::bus_label(at as usize / 3);
+                format!("{bus} · {} · {param}", slot.map_or("no plugin", |s| s.name.as_str()))
             }
         }
+    }
+
+    /// "A03 Snare", or just "A03" for a pad without a name.
+    fn pad_title(&self, p: usize) -> String {
+        let name = &self.pads[p].name;
+        format!("{}{}{}", pad_label(p), if name.is_empty() { "" } else { " " }, name)
     }
 
     /// How a lane's value reads on its control: "-3.2 dB", "L40", "72%".
@@ -113,6 +190,10 @@ impl App {
                 if raw < 1e-4 { "-inf".into() } else { format!("{:+.1} dB", 20.0 * raw.log10()) }
             }
             AutoTarget::BusPan(_) | AutoTarget::PadPan(_) => crate::ui::pan_text(raw),
+            AutoTarget::PadPlugin { id, .. } | AutoTarget::FxPlugin { id, .. } => self
+                .plugin_of(target)
+                .and_then(|s| s.handle.format(id, raw as f64))
+                .unwrap_or_else(|| format!("{:.0}%", raw * 100.0)),
             _ => format!("{:.0}%", raw * 100.0),
         }
     }
@@ -143,7 +224,7 @@ impl App {
                 });
             }
             let at = lane.points.partition_point(|p| (p.tick as f64) < now);
-            lane.points.insert(at, AutoPoint { tick: now as u32, value });
+            lane.points.insert(at, AutoPoint::new(now as u32, value));
         });
         match self.auto.writing.iter_mut().find(|(t, _)| *t == target) {
             Some(w) => w.1 = now,

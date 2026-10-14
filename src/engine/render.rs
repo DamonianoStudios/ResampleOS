@@ -30,14 +30,20 @@ impl Engine {
         let tps = (self.bpm as f64 / 60.0) * PPQ as f64 / self.sr as f64;
         self.sequence(n as f64 * tps, tps);
         if self.playing {
-            self.apply_automation();
+            if self.song_mode {
+                self.apply_song_automation();
+            } else {
+                self.apply_automation();
+            }
         }
         self.render_voices(n);
         self.render_plugins(n);
         self.pull_input(n);
         self.mix_buses(n);
+        self.run_analyzers(n);
         self.capture_and_meter(n);
         self.metronome(n);
+        self.play_ping(n);
         self.samples_run += n as u64;
     }
 
@@ -46,7 +52,12 @@ impl Engine {
     fn sequence(&mut self, span: f64, tps: f64) {
         let mut events = std::mem::take(&mut self.events);
         events.clear();
-        if self.playing {
+        if self.playing && self.song_mode {
+            self.sequence_song(span, tps, &mut events);
+            self.song_tick += span;
+            self.shared.tick.store(self.tick.to_bits(), Ordering::Relaxed);
+            self.shared.song_pos.store(self.song_pos.to_bits(), Ordering::Relaxed);
+        } else if self.playing {
             // A block that runs over the end of the loop is sequenced in two parts, with
             // the change of loop (if one is queued) between them.
             let (mut t0, mut left, mut done) = (self.tick, span, 0.0);
@@ -65,7 +76,9 @@ impl Engine {
             }
             self.tick = t0;
             self.song_tick += span;
+            self.song_pos += span;
             self.shared.tick.store(self.tick.to_bits(), Ordering::Relaxed);
+            self.shared.song_pos.store(self.song_pos.to_bits(), Ordering::Relaxed);
         }
 
         // --- Note repeat for held pads.
@@ -125,31 +138,13 @@ impl Engine {
             if p.cfg.mute || pat.len_ticks == 0 {
                 continue;
             }
-            let len = pat.len_ticks as f64;
-            if p.cfg.human_time > 0.0 || p.cfg.human_vel > 0.0 {
-                humanized_notes(pad, pat, &p.cfg, self.swing, t0, span, done, self.scene_pass, tps, events);
-                continue;
-            }
-            let a = t0.rem_euclid(len);
-            let b = a + span;
-            for note in &pat.notes {
-                let mut w = swing_tick(note.start as f64, self.swing);
-                if w < a {
-                    w += len;
-                }
-                if w >= a && w < b && events.len() < events.capacity() {
-                    events.push(Event {
-                        pad,
-                        vel: note.vel as f32 / 127.0,
-                        semis: note.pitch as f32 - 60.0,
-                        key: 0x8000_0000 | note.pitch as u32,
-                        offset: ((w - a + done) / tps) as u32,
-                        gate: (note.len as f64 / tps) as i64,
-                        locks: note.locks,
-                    });
-                }
-            }
+            pattern_notes(pad, pat, &p.cfg, self.swing, t0, span, done, self.scene_pass, tps, events);
         }
+        self.click(t0, span, done, tps);
+    }
+
+    /// Schedules the metronome's click if a beat falls in `[t0, t0 + span)`.
+    pub(super) fn click(&mut self, t0: f64, span: f64, done: f64, tps: f64) {
         if self.metronome {
             let beat = PPQ as f64;
             let next = (t0 / beat).ceil() * beat;
@@ -485,20 +480,14 @@ impl Engine {
                     }
                     let Some(rt) = self.fx_plugins[b * 3 + s].as_mut() else { continue };
                     rt.prepare(n);
-                    match rt.buf.inputs.len() {
-                        0 => {}
-                        1 => {
-                            for i in 0..n {
-                                rt.buf.inputs[0][i] = (l[i] + r[i]) * 0.5;
-                            }
-                        }
-                        _ => {
-                            rt.buf.inputs[0].copy_from_slice(l);
-                            rt.buf.inputs[1].copy_from_slice(r);
-                        }
-                    }
-                    // A busy or failed plugin passes the dry signal through untouched.
-                    if rt.run(n) && !rt.buf.outputs.is_empty() {
+                    feed_stereo(&mut rt.buf.inputs, l, r);
+                    let input_peak = l[..n].iter().chain(&r[..n]).fold(0f32, |m, v| m.max(v.abs()));
+                    // A busy or failed plugin passes the dry signal through untouched, and so
+                    // does one that has gone silent.
+                    let ran = rt.run(n);
+                    let silent = ran && rt.gone_silent(n, input_peak, self.sr);
+                    self.shared.fx_silent[b * 3 + s].store(silent, Ordering::Relaxed);
+                    if ran && !silent && !rt.buf.outputs.is_empty() {
                         let outs = &rt.buf.outputs;
                         let (a, b2) = (&outs[0], &outs[outs.len().min(2) - 1]);
                         let mix = slot.params[0];
@@ -566,6 +555,17 @@ impl Engine {
         }
     }
 
+    /// Feeds each analyzer plugin a copy of the bus it watches. Their output is ignored.
+    fn run_analyzers(&mut self, n: usize) {
+        for (slot, source) in self.analyzers.iter_mut() {
+            let Some(rt) = slot.as_mut() else { continue };
+            let [l, r] = &self.bufs[*source as usize];
+            rt.prepare(n);
+            feed_stereo(&mut rt.buf.inputs, &l[..n], &r[..n]);
+            rt.run(n);
+        }
+    }
+
     /// Feeds the skip-back ring from the chosen source and meters the master.
     fn capture_and_meter(&mut self, n: usize) {
         if self.ring_src == 5 {
@@ -582,6 +582,26 @@ impl Engine {
             let m = &self.bufs[MASTER];
             self.lufs.process(&m[0][..n], &m[1][..n], &self.shared);
         }
+    }
+
+    /// The latency test signal goes straight to the output, after everything else. The
+    /// input ring's position for its first sample is published for the UI to look from.
+    fn play_ping(&mut self, n: usize) {
+        if self.ping_pos >= self.ping.len() {
+            return;
+        }
+        if self.ping_pos == 0 {
+            // This block's input is already in the ring, so its first frame is n back.
+            let frame = self.shared.input_ring.written().saturating_sub(n as u64);
+            self.shared.ping_frame.store(frame, Ordering::Relaxed);
+        }
+        let [l, r] = &mut self.bufs[MASTER];
+        let k = n.min(self.ping.len() - self.ping_pos);
+        for ((l, r), s) in l.iter_mut().zip(r.iter_mut()).zip(&self.ping[self.ping_pos..self.ping_pos + k]) {
+            *l += s;
+            *r += s;
+        }
+        self.ping_pos += k;
     }
 
     fn metronome(&mut self, n: usize) {
@@ -602,6 +622,22 @@ impl Engine {
                 }
             }
             self.click_at = -1;
+        }
+    }
+}
+
+/// Puts a stereo pair into a plugin's inputs: both sides, or their mix for a mono input.
+fn feed_stereo(inputs: &mut [Vec<f32>], l: &[f32], r: &[f32]) {
+    match inputs {
+        [] => {}
+        [mono] => {
+            for (o, (a, b)) in mono.iter_mut().zip(l.iter().zip(r)) {
+                *o = (a + b) * 0.5;
+            }
+        }
+        [il, ir, ..] => {
+            il[..l.len()].copy_from_slice(l);
+            ir[..r.len()].copy_from_slice(r);
         }
     }
 }
@@ -679,6 +715,37 @@ fn jitter(pad: u16, note: usize, pass: i64) -> (f32, f32) {
 
 /// Sequencer path for pads with humanize on. Notes are placed on the absolute timeline so
 /// one that drifts across a loop boundary still fires exactly once.
+/// Collects the notes of `pat`, read as a loop, that start in `[t0, t0 + span)` of it.
+/// `done` is how many ticks of the block came before `t0`, and `pass` tells one time
+/// round from another, for humanize.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn pattern_notes(pad: u16, pat: &Pattern, cfg: &PadCfg, swing: f32, t0: f64, span: f64, done: f64, pass: i64, tps: f64, events: &mut Vec<Event>) {
+    if cfg.human_time > 0.0 || cfg.human_vel > 0.0 {
+        humanized_notes(pad, pat, cfg, swing, t0, span, done, pass, tps, events);
+        return;
+    }
+    let len = pat.len_ticks as f64;
+    let a = t0.rem_euclid(len);
+    let b = a + span;
+    for note in &pat.notes {
+        let mut w = swing_tick(note.start as f64, swing);
+        if w < a {
+            w += len;
+        }
+        if w >= a && w < b && events.len() < events.capacity() {
+            events.push(Event {
+                pad,
+                vel: note.vel as f32 / 127.0,
+                semis: note.pitch as f32 - 60.0,
+                key: 0x8000_0000 | note.pitch as u32,
+                offset: ((w - a + done) / tps) as u32,
+                gate: (note.len as f64 / tps) as i64,
+                locks: note.locks,
+            });
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn humanized_notes(
     pad: u16,

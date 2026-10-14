@@ -7,9 +7,45 @@ use crate::music::{Key, NOTE_NAMES, Scale, bank_name, note_name, pad_label};
 use eframe::egui::{self, Sense, Stroke, StrokeKind, vec2};
 
 pub fn draw(app: &mut App, ctx: &egui::Context) {
+    confirm_new(app, ctx);
+    super::buses::analyzers_window(app, ctx);
     harmonizer(app, ctx);
     choke_matrix(app, ctx);
     help(app, ctx);
+}
+
+/// Asks before File > New throws away unsaved changes.
+fn confirm_new(app: &mut App, ctx: &egui::Context) {
+    if !app.confirm_new {
+        return;
+    }
+    let modal = egui::Modal::new(egui::Id::new("confirm_new")).show(ctx, |ui| {
+        ui.set_width(340.0);
+        ui.heading("Start a new project?");
+        ui.add_space(4.0);
+        ui.label("This project has changes that have not been saved.");
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            if ui.button("Save first").clicked() {
+                crate::project::save_dialog(app);
+                // A cancelled or failed save leaves the project as it was.
+                if !app.has_unsaved_changes() {
+                    crate::project::new_project(app);
+                }
+                app.confirm_new = false;
+            }
+            if ui.button("Discard changes").clicked() {
+                crate::project::new_project(app);
+                app.confirm_new = false;
+            }
+            if ui.button("Cancel").clicked() {
+                app.confirm_new = false;
+            }
+        });
+    });
+    if modal.should_close() {
+        app.confirm_new = false;
+    }
 }
 
 fn harmonizer(app: &mut App, ctx: &egui::Context) {
@@ -98,19 +134,34 @@ fn harmonizer(app: &mut App, ctx: &egui::Context) {
                 ui.selectable_value(&mut app.conform_mode, ConformMode::Smart, "Smart Conform");
                 ui.checkbox(&mut app.preserve_transients, "Lock transients");
             });
+            ui.horizontal(|ui| {
+                ui.label("Method");
+                for mode in crate::stretch::WarpMode::ALL {
+                    ui.selectable_value(&mut app.warp_mode, mode, mode.name()).on_hover_text(mode.hint());
+                }
+                if app.warp_mode == crate::stretch::WarpMode::Elastic {
+                    ui.checkbox(&mut app.warp_formants, "Keep formants");
+                }
+            });
             ui.separator();
 
-            let ratio = app.conform_ratio();
-            let semis = app.conform_semis(sel);
+            let (ratio, semis) = app.conform_plan(sel);
             ui.label(format!("Project: {:.1} BPM, {}", app.bpm, app.key.name()));
             ui.label(
                 egui::RichText::new(format!(
-                    "Result: length ×{ratio:.3} ({}), pitch {semis:+.0} st",
+                    "Result: length ×{ratio:.3} ({}), pitch {semis:+.1} st",
                     if ratio > 1.0 { "slower" } else if ratio < 1.0 { "faster" } else { "unchanged" }
                 ))
                 .color(theme::AMBER)
                 .strong(),
             );
+            if app.warp_mode == crate::stretch::WarpMode::Varispeed && app.harm.tempo && app.harm.key {
+                ui.label(
+                    egui::RichText::new("Varispeed ties pitch to tempo: the tempo is matched and the pitch follows, so the key is not conformed.")
+                        .small()
+                        .color(theme::DIM),
+                );
+            }
             ui.horizontal(|ui| {
                 if ui.button("Conform to project (bake)  Enter").clicked() {
                     app.conform(sel);
@@ -225,7 +276,7 @@ fn help(app: &mut App, ctx: &egui::Context) {
             ("Shift + click a loop", "Add it to the chain"),
             ("Shift + pad", "Select without triggering"),
             ("Ctrl + K", "Key / BPM harmonizer"),
-            ("F2", "VST3 browser: load an instrument on the selected pad"),
+            ("F2", "Plugin browser (VST3 and CLAP): load an instrument on the selected pad"),
             ("Ctrl + ,", "Preferences: audio device, sample rate, buffer, scale, plugin folders"),
             ("C", "Transient slice to the lowest empty bank"),
             ("[  ]", "Octave down / up"),

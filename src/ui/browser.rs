@@ -1,4 +1,4 @@
-//! VST3 plugin browser. Built for big libraries: the list is virtualised, filtering is a
+//! Plugin browser (VST3 and CLAP). Built for big libraries: the list is virtualised, filtering is a
 //! substring match on a pre-lowercased key, and scanning never blocks it.
 
 use super::theme;
@@ -17,11 +17,12 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
             let bus = crate::shared::bus_label(b);
             format!("effect for {bus}, slot {}", s + 1)
         }
+        PluginTarget::Analyzer(k) => format!("analyzer {}", k + 1),
     };
     let mut open = true;
     let mut load: Option<(std::path::PathBuf, Option<String>)> = None;
     let extra_dirs = app.prefs.vst3_dirs.clone();
-    egui::Window::new(format!("VST3 Plugins: {target_name}"))
+    egui::Window::new(format!("Plugins: {target_name}"))
         .open(&mut open)
         .default_size([620.0, 560.0])
         .min_width(460.0)
@@ -86,9 +87,9 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
             if shown.is_empty() {
                 ui.add_space(20.0);
                 let msg = if app.catalog.scanning {
-                    "Scanning your VST3 folders…"
+                    "Scanning your VST3 and CLAP folders…"
                 } else if app.catalog.entries.is_empty() {
-                    "No plugins found in the standard VST3 folders."
+                    "No plugins found in the standard VST3 and CLAP folders."
                 } else {
                     "Nothing matches."
                 };
@@ -117,7 +118,10 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
                             }
                             None => {
                                 let col = if e.instrument { theme::CYAN } else { theme::AMBER };
-                                ui.label(egui::RichText::new(&e.category).small().color(col));
+                                if crate::clap::is_clap(&e.path) {
+                                    ui.label(egui::RichText::new("CLAP").small().strong().color(theme::LIME));
+                                }
+                                ui.label(egui::RichText::new(e.category.replace('|', ", ")).small().color(col));
                             }
                         }
                         if e.error.is_none() && (resp.double_clicked() || resp.clicked() && ui.input(|i| i.modifiers.command)) {

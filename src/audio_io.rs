@@ -104,6 +104,11 @@ fn choose_output(prefs: &Prefs) -> Result<(cpal::Device, cpal::SupportedStreamCo
     Ok((device, config, note))
 }
 
+/// The sample rate the preferences would run at, if the device can be opened.
+pub fn planned_rate(prefs: &Prefs) -> Option<u32> {
+    choose_output(prefs).ok().map(|(_, config, _)| config.sample_rate())
+}
+
 pub fn start(prefs: &Prefs) -> AudioHandle {
     let (tx, rx) = RingBuffer::new(8192);
     let (tx_midi, rx_midi) = RingBuffer::new(1024);

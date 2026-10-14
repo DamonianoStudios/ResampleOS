@@ -163,7 +163,7 @@ fn pad_cell(app: &mut App, ui: &mut Ui, rect: Rect, idx: usize) {
             app.browse_sample(idx);
             ui.close();
         }
-        if ui.button("Load VST3 instrument…").clicked() {
+        if ui.button("Load plugin instrument…").clicked() {
             app.open_browser(PluginTarget::Pad(idx));
             ui.close();
         }

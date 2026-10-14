@@ -57,7 +57,7 @@ impl FxKind {
             FxKind::Comp => "FET Comp",
             FxKind::Delay => "Tape Delay",
             FxKind::Reverb => "Reverb",
-            FxKind::Vst => "VST3",
+            FxKind::Vst => "Plugin",
             FxKind::Eq => "3-Band EQ",
             FxKind::Tune => "Pitch Lock",
             FxKind::VocalComp => "Vocal Comp",

@@ -55,19 +55,31 @@ impl App {
         if self.harm.tempo && self.harm.bpm > 1.0 { self.harm.bpm as f64 / self.bpm as f64 } else { 1.0 }
     }
 
+    /// The length change and pitch shift a conform of pad `idx` will make. In Varispeed
+    /// the two are tied: matching the tempo sets the pitch, or (with tempo off) matching
+    /// the key sets the speed.
+    pub fn conform_plan(&self, idx: usize) -> (f64, f32) {
+        let (ratio, semis) = (self.conform_ratio(), self.conform_semis(idx));
+        if self.warp_mode != stretch::WarpMode::Varispeed {
+            return (ratio, semis);
+        }
+        if self.harm.tempo { (ratio, stretch::varispeed_semis(ratio)) } else { (stretch::varispeed_ratio(semis), semis) }
+    }
+
     pub fn conform(&mut self, idx: usize) {
-        let ratio = self.conform_ratio();
-        let semis = self.conform_semis(idx);
+        let (ratio, semis) = self.conform_plan(idx);
         let note = format!(
-            "conformed {:.1} to {:.1} BPM, {:+.0} st",
+            "conformed {:.1} to {:.1} BPM, {:+.1} st ({})",
             if self.harm.tempo { self.harm.bpm } else { self.bpm },
-            self.bpm,
-            semis
+            self.bpm * if self.harm.tempo { 1.0 } else { ratio as f32 },
+            semis,
+            self.warp_mode.name()
         );
         self.warp(idx, ratio, semis, note);
     }
 
-    /// Time-stretch and pitch-shift a pad in the background, landing as a new take.
+    /// Time-stretch and pitch-shift a pad in the background, landing as a new take, the
+    /// way the warp mode says.
     pub fn warp(&mut self, idx: usize, ratio: f64, semis: f32, note: String) {
         let Some(src) = self.pads[idx].sample().cloned() else { return };
         if (ratio - 1.0).abs() < 1e-4 && semis.abs() < 1e-3 {
@@ -77,10 +89,11 @@ impl App {
         let onsets = if self.preserve_transients { self.pads[idx].transients.clone() } else { Vec::new() };
         let sr = self.sr();
         let tx = self.jobs_tx.clone();
+        let w = stretch::Warp { mode: self.warp_mode, ratio, semis, formants: self.warp_formants };
         self.busy += 1;
         self.status = "Warping…".into();
         std::thread::spawn(move || {
-            let out = stretch::conform(&src, &onsets, ratio, semis, sr);
+            let out = stretch::warp(&src, &onsets, w, sr);
             let _ = tx.send(JobResult::Conformed { pad: idx, sample: out, note });
         });
     }

@@ -528,7 +528,7 @@ fn a_full_drum_kit_is_cheap_to_run() {
 }
 
 fn lanes(target: AutoTarget, points: &[(u32, f32)]) -> Option<Automation> {
-    Some(Arc::new(vec![AutoLane { target, points: points.iter().map(|&(tick, value)| AutoPoint { tick, value }).collect() }]))
+    Some(Arc::new(vec![AutoLane { target, points: points.iter().map(|&(tick, value)| AutoPoint::new(tick, value)).collect() }]))
 }
 
 #[test]
@@ -574,4 +574,268 @@ fn a_loop_switch_brings_its_own_automation() {
     let l: Vec<f32> = out.iter().step_by(2).copied().collect();
     assert!(peak(&l[40000..41000]) > 0.2, "first loop should be heard");
     assert!(peak(&l[140000..141000]) < 1e-3, "second loop's automation should silence the pad");
+}
+
+/// The latency test signal, sent round a simulated loopback cable that delays it by a
+/// known amount, is found at that delay in the input ring.
+#[test]
+fn latency_ping_comes_back_at_the_loopback_delay() {
+    let (mut e, mut tx, shared) = rig();
+    let delay = 1000;
+    let (mut itx, irx) = RingBuffer::new(SR as usize * 4);
+    for _ in 0..delay * 2 {
+        let _ = itx.push(0.0f32);
+    }
+    let _ = tx.push(Cmd::SetInput { rx: Some(irx), ratio: 1.0 });
+    let _ = tx.push(Cmd::InputCfg { dest: 0, gain: 1.0 });
+    let _ = tx.push(Cmd::Ping);
+    let frames = (crate::latency::LISTEN_SECS * SR as f32) as usize + 4800;
+    let mut out = vec![0f32; 480 * 2];
+    for _ in 0..frames / 480 {
+        e.process(&mut out, 2);
+        for v in &out {
+            let _ = itx.push(*v);
+        }
+    }
+    let from = shared.ping_frame.load(Ordering::Relaxed);
+    assert_ne!(from, u64::MAX, "the ping never played");
+    let need = (crate::latency::LISTEN_SECS * SR as f32) as u64;
+    let (l, _) = shared.input_ring.read(from, from + need);
+    let found = crate::latency::measure(&l, SR as f32).expect("ping not found");
+    assert!(found.samples.abs_diff(delay) <= 2, "{found:?}, expected {delay}");
+    // A perfect match scores 0.75: shifted, one chirp in four still lines up with another.
+    assert!(found.confidence > 0.7, "{found:?}");
+}
+
+#[test]
+fn a_bent_segment_eases_and_its_mirror_eases_the_other_way() {
+    let lane = |curve: f32| AutoLane { target: AutoTarget::BusLevel(0), points: vec![AutoPoint { tick: 0, value: 0.0, curve }, AutoPoint::new(100, 1.0)] };
+    let straight = lane(0.0).value_at(50.0).unwrap();
+    let slow = lane(0.6).value_at(50.0).unwrap();
+    let fast = lane(-0.6).value_at(50.0).unwrap();
+    assert!((straight - 0.5).abs() < 1e-6);
+    assert!(slow < 0.3 && fast > 0.7, "{slow} {fast}");
+    assert!((slow + fast - 1.0).abs() < 1e-5, "mirrored bends should be symmetric: {slow} {fast}");
+    // The ends stay put however hard it is bent.
+    for c in [-1.0, -0.3, 0.3, 1.0] {
+        assert!(lane(c).value_at(0.0).unwrap().abs() < 1e-6);
+        assert!((lane(c).value_at(100.0).unwrap() - 1.0).abs() < 1e-6);
+    }
+}
+
+#[test]
+fn drum_knob_automation_moves_the_knob_and_lets_go_on_stop() {
+    let (mut e, mut tx, _) = rig();
+    let mut cfg = PadCfg { kind: PadKind::Drum, ..PadCfg::default() };
+    cfg.drum.m[2] = 0.3;
+    let _ = tx.push(Cmd::SetPadCfg { pad: 4, cfg });
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    let _ = tx.push(Cmd::SceneLen(TICKS_PER_BAR));
+    let _ = tx.push(Cmd::SetAutomation(lanes(AutoTarget::DrumMacro { pad: 4, m: 2 }, &[(0, 0.9)])));
+    let _ = tx.push(Cmd::Play(true));
+    run(&mut e, 4800);
+    assert!((e.pads[4].cfg.drum.m[2] - 0.9).abs() < 1e-6, "automated: {}", e.pads[4].cfg.drum.m[2]);
+    assert!((e.pads[4].cfg.drum.m[0] - cfg.drum.m[0]).abs() < 1e-6, "other knobs untouched");
+    let _ = tx.push(Cmd::Play(false));
+    run(&mut e, 480);
+    assert!((e.pads[4].cfg.drum.m[2] - 0.3).abs() < 1e-6, "back to the hand-set value: {}", e.pads[4].cfg.drum.m[2]);
+}
+
+/// A lane on a hosted plugin's parameter sets it while it runs, and puts it back once no
+/// lane moves it. Uses the first CLAP instrument installed; skipped where there is none.
+fn installed_clap_instrument() -> Option<crate::clap::ClapPlugin> {
+    use crate::clap::{ClapPlugin, Library, find_files, standard_dirs};
+    let found = find_files(&standard_dirs()).into_iter().find_map(|f| {
+        let d = Library::open(&f).ok()?.descriptors().into_iter().find(|d| d.features.iter().any(|x| x == "instrument"))?;
+        Some((f, d.id))
+    });
+    match found {
+        Some((path, id)) => Some(ClapPlugin::load(&path, Some(&id), SR as f64, MAX_BLOCK).expect("load")),
+        None => {
+            eprintln!("no CLAP instrument installed; skipped");
+            None
+        }
+    }
+}
+
+#[test]
+fn plugin_parameter_automation_sets_and_restores() {
+    use crate::hosted::PluginHandle;
+    let Some(plugin) = installed_clap_instrument() else { return };
+    let param = plugin
+        .parameters()
+        .into_iter()
+        .filter(|p| p.automatable)
+        .find(|p| p.name.to_lowercase().contains("volume"))
+        .or_else(|| plugin.parameters().into_iter().find(|p| p.automatable))
+        .expect("an automatable parameter");
+    let handle = Arc::new(std::sync::Mutex::new(plugin));
+    let before = handle.lock().unwrap().get_parameter(param.id).unwrap();
+    let target = if before > 0.5 { 0.1 } else { 0.9 };
+    let mut rt = PluginRt::new(PluginHandle::Clap(handle.clone()), SR as f64);
+    let (handle2, p2) = (handle.clone(), param.clone());
+    std::thread::spawn(move || {
+        let param = p2;
+        for _ in 0..4 {
+            rt.automate(param.id, target);
+            rt.prepare(480);
+            assert!(rt.run(480));
+        }
+        let during = handle2.lock().unwrap().get_parameter(param.id).unwrap();
+        assert!((during - target as f64).abs() < 0.02, "{}: automated to {target}, reads {during}", param.name);
+        // A block with no lane on it lets go; the next one delivers the old value.
+        for _ in 0..2 {
+            rt.prepare(480);
+            assert!(rt.run(480));
+        }
+        rt.stop();
+    })
+    .join()
+    .unwrap();
+    let after = handle.lock().unwrap().get_parameter(param.id).unwrap();
+    assert!((after - before).abs() < 0.02, "{}: was {before}, back to {after}", param.name);
+}
+
+/// A plugin that puts out pure silence for a clear signal is flagged after a few seconds,
+/// and let back in the moment it makes a sound. An instrument with no notes stands in
+/// for an effect that passes nothing.
+#[test]
+fn a_silent_effect_is_passed_by_until_it_makes_a_sound() {
+    use crate::hosted::PluginHandle;
+    let Some(plugin) = installed_clap_instrument() else { return };
+    let mut rt = PluginRt::new(PluginHandle::Clap(Arc::new(std::sync::Mutex::new(plugin))), SR as f64);
+    std::thread::spawn(move || {
+        let blocks = |secs: f32| (secs * SR as f32 / 480.0) as usize;
+        let mut flagged = false;
+        for _ in 0..blocks(2.0) {
+            rt.prepare(480);
+            assert!(rt.run(480));
+            flagged |= rt.gone_silent(480, 0.5, SR as f32);
+        }
+        assert!(!flagged, "flagged too soon");
+        // Quiet input never counts against it.
+        for _ in 0..blocks(5.0) {
+            rt.prepare(480);
+            rt.run(480);
+            assert!(!rt.gone_silent(480, 0.001, SR as f32) || flagged);
+        }
+        for _ in 0..blocks(1.5) {
+            rt.prepare(480);
+            rt.run(480);
+            flagged = rt.gone_silent(480, 0.5, SR as f32);
+        }
+        assert!(flagged, "three seconds of silence for a clear signal should be flagged");
+        rt.push(PlugEv { on: true, note: 60, vel: 120, offset: 0 });
+        let mut back = false;
+        for _ in 0..blocks(0.2) {
+            rt.prepare(480);
+            rt.run(480);
+            back |= !rt.gone_silent(480, 0.5, SR as f32);
+        }
+        assert!(back, "making a sound should clear the flag");
+        rt.stop();
+    })
+    .join()
+    .unwrap();
+}
+
+/// An analyzer slot listens and never changes the sound. A CLAP instrument stands in for
+/// the analyzer (any plugin will do); skipped where none is installed.
+#[test]
+fn an_analyzer_leaves_the_output_untouched() {
+    use crate::hosted::PluginHandle;
+    let render = |with: bool| {
+        let (mut e, mut tx, _) = rig();
+        if with {
+            let rt = PluginRt::new(PluginHandle::Clap(Arc::new(std::sync::Mutex::new(installed_clap_instrument()?))), SR as f64);
+            let _ = tx.push(Cmd::SetAnalyzer { slot: 0, plugin: Some(rt), source: MASTER as u8 });
+        }
+        let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(tone(9600)) });
+        let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 0.0, key: 1 });
+        Some(run(&mut e, 9600))
+    };
+    let (Some(plain), Some(watched)) = (render(false), render(true)) else { return };
+    assert!(peak(&plain) > 0.2);
+    assert_eq!(plain, watched, "the analyzer changed the output");
+}
+
+/// A plan with one pad playing a one-note pattern in each of `clips` (start, len) bars.
+fn song_plan(pad: u16, clips: &[(u64, u64)], sections: Vec<SongSection>) -> Arc<ArrangementPlan> {
+    let bar = TICKS_PER_BAR as u64;
+    let pattern = Arc::new(Pattern { len_ticks: TICKS_PER_BAR, notes: vec![Note::new(0, 120, 60, 127)] });
+    let clips = clips.iter().map(|&(s, l)| SongClip { start: s * bar, len: l * bar, offset: 0, pattern: pattern.clone() }).collect();
+    Arc::new(ArrangementPlan { tracks: vec![SongTrack { pad, clips }], sections })
+}
+
+/// Peaks of each 480-frame slice of the left channel.
+fn slices(out: &[f32]) -> Vec<f32> {
+    out.iter().step_by(2).copied().collect::<Vec<_>>().chunks(480).map(peak).collect()
+}
+
+#[test]
+fn song_mode_plays_clips_where_they_are_and_nothing_elsewhere() {
+    let (mut e, mut tx, shared) = rig();
+    let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(tone(4800)) });
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    // The pad's own loop pattern would hit on every bar; song mode must ignore it.
+    let _ = tx.push(Cmd::SetPattern { pad: 0, pattern: Some(Arc::new(Pattern { len_ticks: TICKS_PER_BAR, notes: vec![Note::new(0, 120, 60, 127)] })) });
+    let _ = tx.push(Cmd::SceneLen(TICKS_PER_BAR));
+    // A clip on bars 3 and 4 only (zero-based bars 2 and 3).
+    let _ = tx.push(Cmd::Song(SongCmd::Plan(Some(song_plan(0, &[(2, 2)], vec![])))));
+    let _ = tx.push(Cmd::Song(SongCmd::Mode(true)));
+    let _ = tx.push(Cmd::Play(true));
+    // At 120 BPM a bar is 96000 frames.
+    let s = slices(&run(&mut e, 96000 * 4));
+    let bar = |b: usize| &s[b * 200..b * 200 + 20];
+    assert!(peak(bar(0)) < 1e-4 && peak(bar(1)) < 1e-4, "nothing before the clip");
+    assert!(peak(bar(2)) > 0.2 && peak(bar(3)) > 0.2, "the clip plays its pattern each bar");
+    assert!(f64::from_bits(shared.song_pos.load(Ordering::Relaxed)) > 3.9 * TICKS_PER_BAR as f64);
+    // Stop, locate into bar 4 and play: the next hit is that bar's downbeat... which has
+    // passed, so the first sound is nothing until the clip ends; after it, silence.
+    let _ = tx.push(Cmd::Play(false));
+    let _ = tx.push(Cmd::Song(SongCmd::Locate(3.5 * TICKS_PER_BAR as f64)));
+    let _ = tx.push(Cmd::Play(true));
+    let s = slices(&run(&mut e, 96000 * 2));
+    assert!(s.iter().all(|v| *v < 1e-4), "nothing starts after the located point");
+}
+
+#[test]
+fn the_loop_brace_goes_round() {
+    let (mut e, mut tx, shared) = rig();
+    let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(tone(4800)) });
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    let _ = tx.push(Cmd::Song(SongCmd::Plan(Some(song_plan(0, &[(1, 1)], vec![])))));
+    let _ = tx.push(Cmd::Song(SongCmd::Mode(true)));
+    // Brace over bars 2 and 3; start just inside it.
+    let bar = TICKS_PER_BAR as f64;
+    let _ = tx.push(Cmd::Song(SongCmd::Brace(Some((bar, 3.0 * bar)))));
+    let _ = tx.push(Cmd::Song(SongCmd::Locate(bar * 2.5)));
+    let _ = tx.push(Cmd::Play(true));
+    // Half a bar to the brace end, then round to bar 2, where the clip hits.
+    let s = slices(&run(&mut e, 96000));
+    assert!(peak(&s[..90]) < 1e-4, "silent until the brace wraps");
+    assert!(peak(&s[100..120]) > 0.2, "the clip at the brace start plays after the wrap");
+    let pos = f64::from_bits(shared.song_pos.load(Ordering::Relaxed));
+    assert!((bar..3.0 * bar).contains(&pos), "playhead stays inside the brace: {pos}");
+}
+
+#[test]
+fn a_section_brings_its_loops_automation() {
+    let (mut e, mut tx, _) = rig();
+    let _ = tx.push(Cmd::SetPadCfg { pad: 0, cfg: PadCfg { mode: PlayMode::Loop, ..PadCfg::default() } });
+    let flat = Arc::new(SampleData::new(vec![0.5; 4800], vec![0.5; 4800]));
+    let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(flat) });
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    let bar = TICKS_PER_BAR as u64;
+    // Bar 2 is a section whose loop turns the pad right down.
+    let quiet = lanes(AutoTarget::PadVol(0), &[(0, 0.0)]);
+    let sections = vec![SongSection { start: bar, len: bar, loop_len: bar, automation: quiet }];
+    let _ = tx.push(Cmd::Song(SongCmd::Plan(Some(Arc::new(ArrangementPlan { tracks: vec![], sections })))));
+    let _ = tx.push(Cmd::Song(SongCmd::Mode(true)));
+    let _ = tx.push(Cmd::Play(true));
+    let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 0.0, key: 1 });
+    let s = slices(&run(&mut e, 96000 * 3));
+    assert!(s[100] > 0.2, "bar 1 plays at the pad's own level");
+    assert!(s[300] < 1e-3, "bar 2 is silenced by its section's automation");
+    assert!(s[500] > 0.2, "bar 3, outside the section, lets go again");
 }

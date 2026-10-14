@@ -1,4 +1,4 @@
-//! VST3 plugin catalog and scanning.
+//! Plugin catalog (VST3 and CLAP) and scanning.
 //!
 //! A big plugin folder is hostile territory: some plugins take seconds to load, some pop
 //! dialogs, some crash. So nothing is ever probed inside the app. Each plugin is inspected
@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub const SCAN_FLAG: &str = "--scan-vst3";
+pub const SCAN_CLAP_FLAG: &str = "--scan-clap";
 const SCAN_MARKER: &str = "RSOS-SCAN ";
 const SCAN_TIMEOUT: Duration = Duration::from_secs(25);
 
@@ -54,7 +55,22 @@ struct ScanReply {
 }
 
 /// Entry point for the scanner child process. Prints one marked line and exits.
-pub fn scan_child(path: &str) -> ! {
+pub fn scan_child(flag: &str, path: &str) -> ! {
+    if flag == SCAN_CLAP_FLAG {
+        let reply = match crate::clap::Library::open(Path::new(path)) {
+            Ok(lib) => {
+                let replies: Vec<ScanReply> = lib
+                    .descriptors()
+                    .into_iter()
+                    .map(|d| ScanReply { class_id: d.id, name: d.name, vendor: d.vendor, category: d.features.join("|") })
+                    .collect();
+                if replies.is_empty() { "ERR no plugin in this file".to_string() } else { serde_json::to_string(&replies).unwrap_or_default() }
+            }
+            Err(e) => format!("ERR {e}"),
+        };
+        println!("{SCAN_MARKER}{reply}");
+        std::process::exit(0);
+    }
     let reply = match vst3_host::discovery::list_audio_classes(Path::new(path)) {
         Ok(classes) if classes.is_empty() => "ERR no audio plugin in this file".to_string(),
         Ok(classes) => {
@@ -104,7 +120,8 @@ fn scan_one(exe: &Path, path: &Path, cancel: &AtomicBool) -> Vec<PluginEntry> {
         key: String::new(),
     };
     let mut cmd = Command::new(exe);
-    cmd.arg(SCAN_FLAG).arg(path).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    let flag = if crate::clap::is_clap(path) { SCAN_CLAP_FLAG } else { SCAN_FLAG };
+    cmd.arg(flag).arg(path).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -150,7 +167,7 @@ fn scan_one(exe: &Path, path: &Path, cancel: &AtomicBool) -> Vec<PluginEntry> {
                     .map(|r| {
                         PluginEntry {
                             class_id: Some(r.class_id),
-                            instrument: r.category.contains("Instrument"),
+                            instrument: r.category.to_lowercase().contains("instrument"),
                             name: r.name,
                             vendor: r.vendor,
                             category: r.category,
@@ -191,10 +208,13 @@ impl Catalog {
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
         entries = entries.into_iter().map(PluginEntry::finish).collect();
+        // CLAP plugins the catalog has never seen (as after updating from a version that
+        // only read VST3) also make the browser refresh it.
+        let unseen_clap = crate::clap::find_files(&crate::clap::standard_dirs()).iter().any(|p| !entries.iter().any(|e| &e.path == p));
         Catalog {
             // A cache written before files were read plugin by plugin counts as no scan,
             // so the browser refreshes it by itself.
-            scanned_once: !entries.is_empty() && entries.iter().all(|e| e.error.is_some() || e.class_id.is_some()),
+            scanned_once: !unseen_clap && !entries.is_empty() && entries.iter().all(|e| e.error.is_some() || e.class_id.is_some()),
             entries,
             scanning: false,
             total: 0,
@@ -218,7 +238,7 @@ impl Catalog {
         self.entries.iter().filter(|e| e.error.is_some()).count()
     }
 
-    /// Scans the standard VST3 folders in the background. Unchanged plugins come straight
+    /// Scans the standard VST3 and CLAP folders in the background. Unchanged plugins come straight
     /// from the cache; `retry_failed` also re-probes the ones that failed last time.
     pub fn start_scan(&mut self, retry_failed: bool, extra_dirs: &[PathBuf]) {
         if self.scanning {
@@ -227,7 +247,10 @@ impl Catalog {
         let Ok(exe) = std::env::current_exe() else { return };
         let mut roots = vst3_host::discovery::scan_standard_paths();
         roots.extend(extra_dirs.iter().cloned());
-        let paths = vst3_host::discovery::scan_directories(&roots).unwrap_or_default();
+        let mut paths = vst3_host::discovery::scan_directories(&roots).unwrap_or_default();
+        let mut clap_roots = crate::clap::standard_dirs();
+        clap_roots.extend(extra_dirs.iter().cloned());
+        paths.extend(crate::clap::find_files(&clap_roots));
 
         let mut known: HashMap<PathBuf, Vec<PluginEntry>> = HashMap::new();
         for e in self.entries.drain(..) {

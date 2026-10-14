@@ -65,6 +65,9 @@ impl App {
                 continue;
             }
             let (ctrl, shift) = (modifiers.command, modifiers.shift);
+            if self.view == crate::app::View::Arrange && self.arrange_key(key, ctrl) {
+                continue;
+            }
             if ctrl {
                 match key {
                     Key::K => self.open_harmonizer(),
@@ -75,6 +78,7 @@ impl App {
                     Key::Y => self.redo(),
                     Key::S => crate::project::save_dialog(self),
                     Key::O => crate::project::open_dialog(self),
+                    Key::N => self.request_new(),
                     Key::D if self.vocal_context() => self.vocal_duplicate_selected(self.selected),
                     Key::B if self.vocal_context() && shift => self.vocal_bake_to_bank(self.selected),
                     Key::B if self.vocal_context() => self.vocal_bake_to_pad(self.selected),
@@ -164,6 +168,7 @@ impl App {
                     self.send(Cmd::Panic);
                 }
                 Key::F1 => self.show_help ^= true,
+                Key::F3 => self.toggle_view(),
                 Key::F2 => self.open_browser(PluginTarget::Pad(self.selected)),
                 _ => {}
             }
@@ -188,7 +193,7 @@ impl App {
 
     pub fn midi_target_label(&self, t: MidiTarget) -> String {
         match t {
-            MidiTarget::Plugin => "VST3 instrument".into(),
+            MidiTarget::Plugin => "plugin instrument".into(),
             MidiTarget::Synth => "Internal synth".into(),
             MidiTarget::Pad(p) => format!("Pad {} (chromatic)", pad_label(p as usize)),
         }

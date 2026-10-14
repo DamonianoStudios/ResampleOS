@@ -4,9 +4,12 @@
 mod analysis;
 mod app;
 mod audio_io;
+mod clap;
 mod drum;
 mod engine;
 mod fx;
+mod hosted;
+mod latency;
 mod midi;
 mod model;
 mod music;
@@ -31,8 +34,10 @@ fn window_icon() -> egui::IconData {
 fn main() -> eframe::Result {
     // Scanner mode: probe one plugin and exit. See `plugins.rs`.
     let mut args = std::env::args().skip(1);
-    if args.next().as_deref() == Some(plugins::SCAN_FLAG) {
-        plugins::scan_child(&args.next().unwrap_or_default());
+    if let Some(flag) = args.next()
+        && (flag == plugins::SCAN_FLAG || flag == plugins::SCAN_CLAP_FLAG)
+    {
+        plugins::scan_child(&flag, &args.next().unwrap_or_default());
     }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

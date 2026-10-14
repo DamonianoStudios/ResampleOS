@@ -15,13 +15,15 @@ pub struct Prefs {
     /// Length of the skip-back buffer. Costs about 23 MB per minute at 48 kHz.
     pub skipback_minutes: u32,
     pub ui_scale: f32,
-    /// Folders scanned for VST3 plugins in addition to the standard ones.
+    /// Folders scanned for VST3 and CLAP plugins in addition to the standard ones.
     pub vst3_dirs: Vec<PathBuf>,
     /// How late recorded input arrives, in milliseconds. Vocal takes are moved earlier by
     /// this much so they line up with what was heard while singing.
     pub input_latency_ms: f32,
     /// How the input's channels are treated: 0 = auto, 1 = stereo, 2 = mono.
     pub input_mode: u8,
+    /// Light the pads of connected MIDI controllers to match the screen.
+    pub pad_lights: bool,
 }
 
 impl Default for Prefs {
@@ -35,6 +37,7 @@ impl Default for Prefs {
             vst3_dirs: Vec::new(),
             input_latency_ms: 0.0,
             input_mode: 0,
+            pad_lights: false,
         }
     }
 }

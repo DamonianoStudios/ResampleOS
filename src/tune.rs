@@ -242,7 +242,35 @@ impl Tuner {
         let (a, b, c) = (diff[lag.max(2) - 1], diff[lag], diff[(lag + 1).min(hi)]);
         let bend = a - 2.0 * b + c;
         let fine = if bend.abs() > 1e-9 { (0.5 * (a - c) / bend).clamp(-0.5, 0.5) } else { 0.0 };
-        Some(((lag as f32 + fine) * DECIMATE as f32).clamp(self.sr / HIGHEST, self.max_period as f32))
+        let coarse = (lag as f32 + fine) * DECIMATE as f32;
+        Some(self.refine(coarse).clamp(self.sr / HIGHEST, self.max_period as f32))
+    }
+
+    /// Sharpens a period found on the decimated signal against the input at full rate.
+    /// On every fourth sample a high voice's period spans only a dozen or so lags, and
+    /// its estimate can be several cents out; one lag either side at full rate is enough
+    /// to settle it.
+    fn refine(&self, coarse: f32) -> f32 {
+        let window = (COMPARE * DECIMATE) as i64;
+        let end = self.written as i64;
+        let at = |k: i64| self.input[k.rem_euclid(RING as i64) as usize];
+        let d = |lag: i64| -> f32 { (0..window).map(|j| (at(end - 1 - j) - at(end - 1 - j - lag)).powi(2)).sum() };
+        let reach = DECIMATE as i64 + 1;
+        let centre = coarse.round() as i64;
+        let (lo, hi) = ((centre - reach).max(2), (centre + reach).min(self.max_period as i64 - 1));
+        if lo >= hi {
+            return coarse;
+        }
+        let scores: Vec<f32> = (lo - 1..=hi + 1).map(d).collect();
+        let best = (1..scores.len() - 1).min_by(|x, y| scores[*x].total_cmp(&scores[*y])).unwrap_or(1);
+        // The minimum must be a real dip, not the edge of the search.
+        if best == 1 || best == scores.len() - 2 && scores[best + 1] < scores[best] {
+            return coarse;
+        }
+        let (a, b, c) = (scores[best - 1], scores[best], scores[best + 1]);
+        let bend = a - 2.0 * b + c;
+        let fine = if bend > 1e-12 { (0.5 * (a - c) / bend).clamp(-0.5, 0.5) } else { 0.0 };
+        (lo - 1 + best as i64) as f32 + fine
     }
 
     /// Moves the correction toward the nearest allowed note.
@@ -607,5 +635,29 @@ mod tests {
         assert_eq!(nearest_allowed(56.2, A_MINOR), 57.0);
         // No scale at all means every semitone.
         assert_eq!(nearest_allowed(56.2, 0), 56.0);
+    }
+
+    /// The tracked pitch of a steady note is within a few cents of the truth across the
+    /// range, high notes included (whose periods are short in samples).
+    #[test]
+    fn tracks_steady_notes_to_within_a_few_cents() {
+        let mut worst = 0f32;
+        for hz in [82.4f32, 110.0, 196.0, 261.6, 392.0, 523.3, 659.3, 783.99] {
+            let mut tuner = Tuner::new(SR);
+            let input = voice(hz, SR as usize);
+            let mut cents = Vec::new();
+            for block in input.chunks(256) {
+                let (mut l, mut r) = (block.to_vec(), block.to_vec());
+                tuner.process(0.0, 0.0, 0, 0xfff, &mut l, &mut r);
+                if tuner.voiced {
+                    cents.push((tuner.note - (69.0 + 12.0 * (hz / 440.0).log2())) * 100.0);
+                }
+            }
+            let tail = &cents[cents.len() / 2..];
+            let err = tail.iter().fold(0f32, |m, c| m.max(c.abs()));
+            println!("TRACK {hz:7.1} Hz: worst {err:.2} cents");
+            worst = worst.max(err);
+        }
+        assert!(worst < 1.0, "worst tracking error {worst} cents");
     }
 }

@@ -1,6 +1,6 @@
 //! The Mod / Warp tab: pitch and filter, the LFO with its scope, and the warp bake.
 
-use super::{knob, theme, toggle};
+use super::{knob, pill, theme, toggle};
 use crate::app::App;
 use crate::engine::{LfoShape, LfoTarget, PadCfg, lfo_phase};
 use crate::music::{LFO_FEELS, LFO_VALUES, PPQ, lfo_sync, lfo_sync_name, lfo_sync_parts, lfo_sync_ticks};
@@ -270,23 +270,55 @@ fn shape_button(ui: &mut Ui, shape: LfoShape, selected: bool) -> Response {
 }
 
 fn warp(app: &mut App, ui: &mut Ui) {
+    use crate::stretch::{WarpMode, varispeed_ratio, varispeed_semis};
     let sel = app.selected;
     ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        for mode in WarpMode::ALL {
+            if pill(ui, app.warp_mode == mode, mode.name()).on_hover_text(mode.hint()).clicked() {
+                app.warp_mode = mode;
+                if mode == WarpMode::Varispeed {
+                    // Tie the two together, keeping the pitch as set.
+                    app.warp_stretch = (varispeed_ratio(app.warp_semis) * 100.0) as f32;
+                }
+            }
+        }
+    });
+    ui.add_space(4.0);
+    let tied = app.warp_mode == WarpMode::Varispeed;
+    ui.horizontal(|ui| {
         field(ui, "SHIFT", |ui| {
-            ui.add(egui::DragValue::new(&mut app.warp_semis).speed(0.05).range(-24.0..=24.0).fixed_decimals(2).suffix(" st"));
+            let r = ui.add(egui::DragValue::new(&mut app.warp_semis).speed(0.05).range(-24.0..=24.0).fixed_decimals(2).suffix(" st"));
+            if tied && r.changed() {
+                app.warp_stretch = (varispeed_ratio(app.warp_semis) * 100.0).clamp(25.0, 400.0) as f32;
+                app.warp_semis = varispeed_semis(app.warp_stretch as f64 / 100.0);
+            }
         });
         ui.add_space(6.0);
         field(ui, "LENGTH", |ui| {
-            ui.add(egui::DragValue::new(&mut app.warp_stretch).speed(0.5).range(25.0..=400.0).fixed_decimals(0).suffix(" %"));
+            let r = ui.add(egui::DragValue::new(&mut app.warp_stretch).speed(0.5).range(25.0..=400.0).fixed_decimals(0).suffix(" %"));
+            if tied && r.changed() {
+                app.warp_semis = varispeed_semis(app.warp_stretch as f64 / 100.0);
+            }
         });
     });
     ui.add_space(6.0);
-    if toggle(ui, app.preserve_transients, "Lock transients", theme::PURPLE)
-        .on_hover_text("Keep each hit's attack intact and stretch only what lies between them")
-        .clicked()
-    {
-        app.preserve_transients ^= true;
-    }
+    ui.horizontal(|ui| {
+        if app.warp_mode != WarpMode::Varispeed
+            && toggle(ui, app.preserve_transients, "Lock transients", theme::PURPLE)
+                .on_hover_text("Keep each hit's attack intact and stretch only what lies between them")
+                .clicked()
+        {
+            app.preserve_transients ^= true;
+        }
+        if app.warp_mode == WarpMode::Elastic
+            && toggle(ui, app.warp_formants, "Keep formants", theme::PURPLE)
+                .on_hover_text("When shifting pitch, keep the vowel and body of a voice or instrument where they were, so it doesn't sound chipmunked or giant")
+                .clicked()
+        {
+            app.warp_formants ^= true;
+        }
+    });
     ui.add_space(6.0);
 
     let sample = app.pads[sel].sample();
@@ -310,9 +342,10 @@ fn warp(app: &mut App, ui: &mut Ui) {
         app.warp(sel, app.warp_stretch as f64 / 100.0, app.warp_semis, note);
     }
     ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new("Pitch here keeps the length; the Pitch control on the left does not. Formants move with the pitch.")
-            .small()
-            .color(theme::FAINT),
-    );
+    let hint = match app.warp_mode {
+        WarpMode::Varispeed => "Varispeed ties pitch to length, like tape: +12 st is half as long.",
+        WarpMode::Elastic if app.warp_formants => "Pitch here keeps the length, and the formants stay put.",
+        _ => "Pitch here keeps the length; the Pitch control on the left does not. Formants move with the pitch.",
+    };
+    ui.label(egui::RichText::new(hint).small().color(theme::FAINT));
 }

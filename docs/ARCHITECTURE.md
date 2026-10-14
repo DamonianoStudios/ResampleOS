@@ -66,9 +66,19 @@ A change of loop has to land exactly on the beat, so the UI does not make it. It
 
 On the UI side the pads always carry the patterns of the loop on screen; the others are kept in `App::scenes` (`src/app/scenes.rs`). Undo snapshots store all patterns with their loops and none on the pads, so moving between loops is not seen as an edit.
 
+### The arrangement
+
+The arrangement (`src/app/arrange.rs`) is a list of clips per pad and a list of sections. A clip refers to a loop by index and plays that loop's pattern for its pad; nothing is copied, so editing a loop changes every clip that plays it. The engine gets a flattened copy, `ArrangementPlan`, rebuilt and sent whenever the arrangement, a pattern or a loop's automation changes, and swapped in between blocks.
+
+Song mode (`src/engine/song.rs`) is a second transport. `song_pos` counts song ticks whenever the transport runs, in either mode, so a loop launched over the song can hand back to it in time. In song mode the playhead is `song_pos`: for each track the clips under the block are found by binary search, and their patterns read through the same `pattern_notes` the loops use, with each note's gate cut at its clip's end. The section under the playhead supplies the automation, evaluated at the position inside its loop. The loop brace wraps the song clock as a loop's end wraps the loop clock.
+
+Export (`src/app/export.rs`) builds a second `Engine` with no audio device, sends it the whole project and the plan, and runs it on a background thread as fast as it goes, then lets the tails ring out and writes the WAV. Hosted plugins are moved to it for the duration and handed back to the live engine when it finishes.
+
 ### Automation
 
-Automation lives on each loop (`Scene::automation`), so it travels with the loop: undo, project files and the chain all handle it as part of the loop. The engine holds the playing loop's lanes (`Cmd::SetAutomation`, and in `SceneSwap` for the loop coming in, swapped on the same sample as the patterns). Each block it starts from the buses as set by hand (`bus_base`) and writes the lanes' values over them at the playhead; pads it has moved are remembered with their hand-set volume, pan and cutoff and put back when no lane moves them any more. The UI never shows automated values on the controls; they keep showing what was set by hand.
+Automation lives on each loop (`Scene::automation`), so it travels with the loop: undo, project files and the chain all handle it as part of the loop. The engine holds the playing loop's lanes (`Cmd::SetAutomation`, and in `SceneSwap` for the loop coming in, swapped on the same sample as the patterns). Each block it starts from the buses as set by hand (`bus_base`) and writes the lanes' values over them at the playhead; pads it has moved (volume, pan, cutoff, drum knobs) are put back to their hand-set settings (`pad_base`) when the transport stops or no lane moves them any more. A segment's bend is stored on the point it leaves (`AutoPoint::curve`) and shaped by `bend`, a power curve mirrored for negative values.
+
+Plugin parameters are handed to the plugin's `PluginRt` (`automate`), which sends only changes, at the start of the block, and notes each parameter's value before automation first took it. A parameter that no lane moved in a block is put back to that value on the plugin's next block, so stopping, removing a lane and switching loops all let go without the engine tracking any of them. The controls keep showing what was set by hand; the UI draws the automated value as a bar beside them.
 
 ### Drum synth
 
@@ -82,7 +92,7 @@ The engine knows almost nothing about vocals. To it, a vocal pad is an audio pad
 - A mark, `Shared::loop_frame`, of where in that ring the playing loop began, set sample-accurately when Play is pressed and each time a loop starts.
 - The vocal bus's gate, de-esser and midrange ducking (`vocal_front_end` and `make_room` in `render.rs`).
 
-Everything else is on the UI side. `src/vocal.rs` holds the model: a `VocalStack` of lanes, each a list of clips into shared recordings, and a comp that says which take is heard where. `App::vocal_poll` (`src/app/vocal.rs`) watches the loop marks while a pad is armed and cuts each pass out of the ring as a take, shifted by the input latency. Whenever a stack changes it is rendered to one buffer, with a 2 ms equal-power fade at every clip edge and a crossfade where the comp changes take, and that buffer is sent to the engine as the pad's sample. A one-note pattern starts it at the top of the loop. Pitch-shifted copies of takes for play-through lanes are made on a background thread and cached.
+Everything else is on the UI side. `src/vocal.rs` holds the model: a `VocalStack` of lanes, each a list of clips into shared recordings, and a comp that says which take is heard where. `App::vocal_poll` (`src/app/vocal.rs`) watches the loop marks while a pad is armed and cuts each pass out of the ring as a take, shifted by the input latency. That latency can be measured: the engine plays a train of chirps with uneven gaps straight to the output (`Cmd::Ping`) and publishes where in the input ring it started, and `src/latency.rs` finds the train in what came back by normalised correlation, each chirp scored on its own so that only the true delay lines all of them up. Whenever a stack changes it is rendered to one buffer, with a 2 ms equal-power fade at every clip edge and a crossfade where the comp changes take, and that buffer is sent to the engine as the pad's sample. A one-note pattern starts it at the top of the loop. Pitch-shifted copies of takes for play-through lanes are made on a background thread and cached.
 
 Because the stack is part of the pad, undo covers vocal edits like any other.
 
@@ -133,19 +143,31 @@ A pad's take stack is a `Vec<Arc<SampleData>>` and an index. Destructive edits g
 - **Onsets:** multi-band spectral flux, each band normalised by its own average, peak-picked against a local mean, then refined to the point where the level jumps and backed up to a zero crossing.
 - **Tempo:** autocorrelation of the onset envelope, scored with a comb at the beat, its multiples and its half, with a penalty at one third of the lag to reject the common two-thirds error. A loop that is a whole number of bars long snaps to the exact tempo its length implies.
 - **Key:** a 12-bin pitch class profile, correlated with the Krumhansl-Schmuckler major and minor profiles.
-- **Pitch:** YIN, taking the median over the sounding frames, and reporting nothing unless most frames are clearly periodic.
+- **Pitch:** YIN with its difference function computed exactly by FFT autocorrelation, over up to 120 frames. Each frame takes the first dip under the threshold, checked against the octave below; a frame with no such dip (noise, breath) takes the first dip nearly as deep as the deepest, since noise makes every multiple of the period look alike. Frames vote, by level and clarity, into a histogram in tenths of a semitone smoothed over a semitone; the answer is the weighted mean of the frames near its peak, and nothing is reported when that note holds too little of the voiced material (chords, melodies that never settle, noise).
 
 The onset envelope is the expensive part and does not depend on sensitivity, so it is computed once per take and cached.
 
-`src/stretch.rs` stretches between transient markers with WSOLA (overlap-add with a waveform-similarity search). The first 15 ms of each transient are copied through unchanged, and each segment's first and last grains are pinned to the input's own start and end, so segments splice without a crossfade. Pitch shifting is a stretch followed by resampling.
+`src/stretch.rs` has three methods (`WarpMode`).
+
+- **Elastic** is a phase vocoder (43 ms Hann frames, 4x overlap) with identity phase locking: each spectral peak's true frequency is measured from its phase advance over one hop, and the bins around it keep their phase relation to it, which avoids the smeared, phasey sound of a plain vocoder. Both channels take the phase rotation worked out on their sum, so the stereo image holds. Transients are handled by the time map rather than by splicing: each onset, the half frame before it and 15 ms after it are mapped at the input's own speed and carry the input's own phases, so they come out unchanged, and the gaps between take up the change of length. Pitch shifting is a stretch followed by resampling; with formant keeping, the spectral envelope (by cepstral smoothing) is pre-warped in the stretch so that the resample puts it back where it was.
+- **Beats** stretches between transient markers with WSOLA (overlap-add with a waveform-similarity search, normalised cross-correlation, coarse then sample-exact). The first 15 ms of each transient are copied through unchanged, and each segment's first and last grains are pinned to the input's own start and end, so segments splice without a crossfade.
+- **Varispeed** only resamples.
+
+Resampling everywhere (varispeed, pitch bakes, the pitch-shift step above, and loading files at another sample rate) is band-limited: a Kaiser-windowed sinc of 24 zero crossings a side, read from a table, with its cutoff lowered when reading faster so nothing aliases.
+
+Pitch Lock's real-time tracker (`src/tune.rs`) finds the period on every fourth sample for speed, then refines it over a lag either side at full rate, which keeps high notes within a fraction of a cent.
 
 ## Plugin hosting
 
-Plugin loading, processing and editor windows use the [`vst3-host`](https://github.com/HelgeSverre/rust-vst3-host) crate. The build uses the copy in `vendor/vst3-host`, which carries a few small changes that plugin editors and the scanner depend on; [`vendor/README.md`](../vendor/README.md) lists them.
+`src/hosted.rs` is the one place that knows there are two formats: a `PluginHandle` is either a VST3 or a CLAP instance, and the app and engine go through it for state, parameters, transport and processing.
 
-**Scanning** (`src/plugins.rs`) never loads a plugin inside the app. The executable has a second mode, `--scan-vst3 <path>`, that lists every plugin in one file and prints one line. It reads the file's class list without creating any plugin, so a shell holding hundreds of plugins costs about as much as a file holding one. Catalog entries, pad and bus slots and saved projects identify a plugin by file and class id. The app runs several of these at a time, each with a 25 second limit, and caches results against the file's timestamp and size.
+**VST3.** Plugin loading, processing and editor windows use the [`vst3-host`](https://github.com/HelgeSverre/rust-vst3-host) crate. The build uses the copy in `vendor/vst3-host`, which carries a few small changes that plugin editors and the scanner depend on; [`vendor/README.md`](../vendor/README.md) lists them.
 
-**Running.** A loaded plugin sits behind `Arc<Mutex<Plugin>>`, shared between the UI (editor, state, tempo) and the engine. The engine never parks on the lock. It retries for a few tens of microseconds, which outlasts the UI's per-frame servicing, and only then gives the block up: an instrument is silent for that block and an effect passes its input through. Notes for a busy plugin are kept for the next block. Output is checked for NaN and infinity before it is mixed.
+**CLAP.** `src/clap/` is a host written directly against the C API ([`clap-sys`](https://github.com/micahrj/clap-sys)). A `.clap` file is loaded once and its entry point initialised once, however many instances are made from it. The host offers the params, state, GUI, latency, log, thread-check and audio-ports extensions; whatever the plugin asks of it from another thread (a main-thread callback, a resize, a restart, its editor closing) only raises a flag that the UI acts on next frame. The engine's stereo pair feeds the main ports; other ports and channels get silence and are discarded. Parameter events carry the cookie the plugin gave with the parameter's info, which JUCE-made plugins depend on. On Windows the editor is parented into a plain Win32 window (`src/clap/window.rs`) whose messages eframe's own message loop delivers.
+
+**Scanning** (`src/plugins.rs`) never loads a plugin inside the app. The executable has two extra modes, `--scan-vst3 <path>` and `--scan-clap <path>`, that list every plugin in one file and print one line. It reads the file's class list without creating any plugin, so a shell holding hundreds of plugins costs about as much as a file holding one. Catalog entries, pad and bus slots and saved projects identify a plugin by file and class id. The app runs several of these at a time, each with a 25 second limit, and caches results against the file's timestamp and size.
+
+**Running.** A loaded plugin sits behind `Arc<Mutex<Plugin>>`, shared between the UI (editor, state, tempo) and the engine. The engine never parks on the lock. It retries for a few tens of microseconds, which outlasts the UI's per-frame servicing, and only then gives the block up: an instrument is silent for that block and an effect passes its input through. Notes for a busy plugin are kept for the next block. Output is checked for NaN and infinity before it is mixed. Analyzer plugins (`Cmd::SetAnalyzer`) are run after the buses are mixed, each fed a copy of the bus it watches, and their output is discarded. An effect that puts out nothing but zeros for three seconds while fed a signal above -40 dBFS is passed by (`PluginRt::gone_silent`) and flagged to the UI through `Shared::fx_silent`; it is mixed in again the moment it makes a sound.
 
 **Feeding editors.** A plugin's processor and its editor are separate objects, and the host carries data between them. While an editor is open, the UI thread drains what the processor reported each frame (`EditorWin::feed` in `src/app/plugins.rs`), which hands output parameter points such as gain-reduction readouts to the editor. Plugins that instead have the editor poll the processor through connection-point messages, often from a thread of their own, rely on the vendored crate forwarding those messages.
 
@@ -166,8 +188,8 @@ Hosted plugins run inside the app's process. A plugin that crashes while playing
 `cargo test --release` runs:
 
 - **Engine tests** (`src/engine/tests.rs`) that build an `Engine` with no audio device, send it commands, render blocks and check the samples: playback, choke groups, sequencer timing with swing, bus routing, stopping a pad, step patterns, external input, bus sleeping, humanize and sidechaining.
-- **Analysis tests** on synthesised material: tempo, onsets, key and pitch.
-- **Stretch tests** for output length and transient position.
+- **Analysis tests** on synthesised material: tempo, onsets, key and pitch (low notes, a missing fundamental, vibrato, breath noise, melodies, chords and noise).
+- **Warp tests:** lengths and transient positions in every method, a chord kept in tune and steady when stretched, pitch shifts landing on the right note, formants held, varispeed tying pitch to length, and the resampler's distortion and aliasing.
 - **Music tests** for scales, swing and bank naming.
 
 The UI and device I/O have no automated tests.

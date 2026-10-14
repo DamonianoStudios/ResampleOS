@@ -3,6 +3,7 @@
 mod lufs;
 mod plugin_rt;
 mod render;
+mod song;
 #[cfg(test)]
 mod tests;
 mod types;
@@ -101,9 +102,9 @@ pub struct Engine {
     /// The buses as set by hand; `buses` is this with automation on top.
     bus_base: [BusCfg; NUM_BUSES],
     automation: Option<Automation>,
-    /// Pad levels, pans and cutoffs as set by hand, for pads automation has moved, so
-    /// they can be put back once it stops.
-    pad_base: Vec<[f32; 3]>,
+    /// Every pad's settings as set by hand, so pads automation has moved can be put
+    /// back once it stops.
+    pad_base: Vec<PadCfg>,
     auto_pads: Vec<u16>,
     fx: Vec<Fx>,
     bufs: Vec<[Vec<f32>; 2]>,
@@ -125,12 +126,26 @@ pub struct Engine {
     scene_pass: i64,
     /// Ticks since Play, never wrapped: what tempo-synced LFOs count from.
     song_tick: f64,
+    /// The arrangement, and whether the pads are playing it rather than their loops.
+    song: Option<Arc<ArrangementPlan>>,
+    song_mode: bool,
+    /// The song playhead in ticks. Runs in both modes, so the song can be picked up again.
+    song_pos: f64,
+    /// The loop brace: (start, end) in ticks.
+    brace: Option<(f64, f64)>,
+    /// The section whose automation is applied, to let go of it on leaving.
+    song_section: Option<usize>,
+    /// Pads with a track in the arrangement.
+    song_pads: Vec<u16>,
     /// Runs whether or not the transport does, so note repeat works when stopped.
     free_tick: f64,
     metronome: bool,
     click_phase: f32,
     click_env: f32,
     click_freq: f32,
+    /// The latency test signal, and how much of it has played (`usize::MAX`: idle).
+    ping: Vec<f32>,
+    ping_pos: usize,
     click_at: i64,
 
     roll_on: bool,
@@ -153,6 +168,8 @@ pub struct Engine {
     pad_plugins: Vec<Option<Box<PluginRt>>>,
     plugin_pads: Vec<u16>,
     fx_plugins: Vec<Option<Box<PluginRt>>>,
+    /// Analyzer plugins and the bus each watches.
+    analyzers: Vec<(Option<Box<PluginRt>>, u8)>,
     plug_notes: [Option<PlugNote>; 64],
 
     input: Option<Consumer<f32>>,
@@ -201,7 +218,7 @@ impl Engine {
             buses: [BusCfg::default(); NUM_BUSES],
             bus_base: [BusCfg::default(); NUM_BUSES],
             automation: None,
-            pad_base: vec![[0.8, 0.0, 1.0]; MAX_PADS],
+            pad_base: vec![PadCfg::default(); MAX_PADS],
             auto_pads: Vec::with_capacity(MAX_PADS),
             fx: (0..NUM_BUSES * 3).map(|_| Fx::new(sr)).collect(),
             bufs: (0..NUM_BUSES).map(|_| [vec![0.0; MAX_BLOCK], vec![0.0; MAX_BLOCK]]).collect(),
@@ -218,11 +235,19 @@ impl Engine {
             queued: None,
             scene_pass: 0,
             song_tick: 0.0,
+            song: None,
+            song_mode: false,
+            song_pos: 0.0,
+            brace: None,
+            song_section: None,
+            song_pads: Vec::with_capacity(MAX_PADS),
             free_tick: 0.0,
             metronome: false,
             click_phase: 0.0,
             click_env: 0.0,
             click_freq: 1000.0,
+            ping: crate::latency::ping(sr),
+            ping_pos: usize::MAX,
             click_at: -1,
             roll_on: false,
             roll_ticks: PPQ / 4,
@@ -239,6 +264,7 @@ impl Engine {
             pad_plugins: (0..MAX_PADS).map(|_| None).collect(),
             plugin_pads: Vec::with_capacity(MAX_PADS),
             fx_plugins: (0..NUM_BUSES * 3).map(|_| None).collect(),
+            analyzers: (0..crate::shared::NUM_ANALYZERS).map(|_| (None, MASTER as u8)).collect(),
             plug_notes: [None; 64],
             input: None,
             in_ratio: 1.0,
@@ -288,20 +314,26 @@ impl Engine {
         self.buses = self.bus_base;
         for k in 0..self.auto_pads.len() {
             let pad = self.auto_pads[k] as usize;
-            let [vol, pan, cutoff] = self.pad_base[pad];
-            let cfg = &mut self.pads[pad].cfg;
-            (cfg.vol, cfg.pan, cfg.cutoff) = (vol, pan, cutoff);
+            self.pads[pad].cfg = self.pad_base[pad];
         }
         self.auto_pads.clear();
+        // Plugin parameters are let go of by the plugins themselves on their next block,
+        // when nothing has automated them in it.
     }
 
-    /// Moves the automated controls to where their lanes are at the playhead.
+    /// Moves the automated controls to where the playing loop's lanes are at the playhead.
     fn apply_automation(&mut self) {
-        let Engine { automation, buses, bus_base, pads, pad_base, auto_pads, tick, .. } = self;
-        let Some(lanes) = automation.as_ref() else { return };
+        if let Some(lanes) = self.automation.clone() {
+            self.apply_lanes(&lanes, self.tick);
+        }
+    }
+
+    /// Moves the controls `lanes` automate to where the lanes are at tick `at` of their loop.
+    fn apply_lanes(&mut self, lanes: &Automation, at: f64) {
+        let Engine { buses, bus_base, pads, auto_pads, pad_plugins, fx_plugins, .. } = self;
         *buses = *bus_base;
         for lane in lanes.iter() {
-            let Some(v) = lane.value_at(*tick) else { continue };
+            let Some(v) = lane.value_at(at) else { continue };
             let value = lane.target.scale_up(v);
             match lane.target {
                 AutoTarget::BusParam { bus, slot, param } => {
@@ -323,21 +355,45 @@ impl Engine {
                         bus.pan = value;
                     }
                 }
-                AutoTarget::PadVol(p) | AutoTarget::PadPan(p) | AutoTarget::PadCutoff(p) => {
+                AutoTarget::PadVol(p) | AutoTarget::PadPan(p) | AutoTarget::PadCutoff(p) | AutoTarget::DrumMacro { pad: p, .. } => {
                     let Some(pad) = pads.get_mut(p as usize) else { continue };
                     if !auto_pads.contains(&p) {
                         auto_pads.push(p);
-                        let c = &pad.cfg;
-                        pad_base[p as usize] = [c.vol, c.pan, c.cutoff];
                     }
                     match lane.target {
                         AutoTarget::PadVol(_) => pad.cfg.vol = value,
                         AutoTarget::PadPan(_) => pad.cfg.pan = value,
+                        AutoTarget::DrumMacro { m, .. } => {
+                            if let Some(k) = pad.cfg.drum.m.get_mut(m as usize) {
+                                *k = value;
+                            }
+                        }
                         _ => pad.cfg.cutoff = value,
+                    }
+                }
+                AutoTarget::PadPlugin { pad, id } => {
+                    if let Some(rt) = pad_plugins.get_mut(pad as usize).and_then(|p| p.as_mut()) {
+                        rt.automate(id, value);
+                    }
+                }
+                AutoTarget::FxPlugin { slot, id } => {
+                    if let Some(rt) = fx_plugins.get_mut(slot as usize).and_then(|p| p.as_mut()) {
+                        rt.automate(id, value);
                     }
                 }
             }
         }
+    }
+
+    /// Sends a plugin the engine has let go of back to the UI to drop, telling it first
+    /// that processing has ended, unless `same` (the same instance took its place, as
+    /// when the UI resends everything).
+    fn retire_plugin(&mut self, old: Option<Box<PluginRt>>, same: bool) {
+        let Some(mut old) = old else { return };
+        if !same {
+            old.stop();
+        }
+        self.trash(Garbage::Plugin(old));
     }
 
     /// Cuts everything sounding in choke group `group`: samples and drum hits alike.
@@ -434,9 +490,8 @@ impl Engine {
                     }
                     let has = plugin.is_some();
                     let old = std::mem::replace(&mut self.pad_plugins[pad as usize], plugin);
-                    if let Some(old) = old {
-                        self.trash(Garbage::Plugin(old));
-                    }
+                    let same = same_instance(&old, &self.pad_plugins[pad as usize]);
+                    self.retire_plugin(old, same);
                     let at = self.plugin_pads.iter().position(|&x| x == pad);
                     match (has, at) {
                         (true, None) => self.plugin_pads.push(pad),
@@ -448,11 +503,18 @@ impl Engine {
                 }
             }
             Cmd::SetFxPlugin { slot, plugin } => {
-                if (slot as usize) < self.fx_plugins.len() {
-                    let old = std::mem::replace(&mut self.fx_plugins[slot as usize], plugin);
-                    if let Some(old) = old {
-                        self.trash(Garbage::Plugin(old));
-                    }
+                if let Some(at) = self.fx_plugins.get_mut(slot as usize) {
+                    let old = std::mem::replace(at, plugin);
+                    let same = same_instance(&old, at);
+                    self.retire_plugin(old, same);
+                }
+            }
+            Cmd::SetAnalyzer { slot, plugin, source } => {
+                if let Some(at) = self.analyzers.get_mut(slot as usize) {
+                    at.1 = source.min(MASTER as u8);
+                    let old = std::mem::replace(&mut at.0, plugin);
+                    let same = same_instance(&old, &at.0);
+                    self.retire_plugin(old, same);
                 }
             }
             Cmd::PadOn { pad, vel, semis, key } => {
@@ -493,7 +555,7 @@ impl Engine {
                 if (pad as usize) < MAX_PADS {
                     let solo_changed = self.pads[pad as usize].cfg.solo != cfg.solo;
                     self.pads[pad as usize].cfg = cfg;
-                    self.pad_base[pad as usize] = [cfg.vol, cfg.pan, cfg.cutoff];
+                    self.pad_base[pad as usize] = cfg;
                     if solo_changed {
                         self.any_solo = self.pads.iter().any(|p| p.cfg.solo);
                     }
@@ -547,9 +609,11 @@ impl Engine {
                     self.trash(Garbage::Scene(old));
                 }
             }
+            Cmd::Song(cmd) => self.handle_song(cmd),
             Cmd::Play(on) => {
                 if on && !self.playing {
-                    self.tick = 0.0;
+                    // A loop plays from its top; the song from wherever its playhead is.
+                    self.tick = if self.song_mode { self.song_pos } else { 0.0 };
                     self.scene_pass = 0;
                     self.song_tick = 0.0;
                     self.shared.loop_frame.store(self.shared.input_ring.written(), Ordering::Relaxed);
@@ -566,6 +630,8 @@ impl Engine {
                         v.released = true;
                     }
                     self.plugin_notes_off(None);
+                    // Automated controls go back to where they were set by hand.
+                    self.release_automation();
                 }
                 self.playing = on;
                 self.shared.playing.store(on, Ordering::Relaxed);
@@ -602,6 +668,7 @@ impl Engine {
                 self.roll_on = on;
                 self.roll_ticks = ticks.max(10);
             }
+            Cmd::Ping => self.ping_pos = 0,
             Cmd::Panic => {
                 for v in self.voices.iter_mut() {
                     v.killed = true;
@@ -797,4 +864,9 @@ fn pick<T>(pool: &mut [T], active: impl Fn(&T) -> bool, age: impl Fn(&T) -> u64)
         .position(|v| !active(v))
         .unwrap_or_else(|| (0..pool.len()).min_by_key(|&i| age(&pool[i])).unwrap_or(0));
     &mut pool[idx]
+}
+
+/// True when a slot's old and new plugin handles are the same instance.
+fn same_instance(old: &Option<Box<PluginRt>>, new: &Option<Box<PluginRt>>) -> bool {
+    matches!((old, new), (Some(a), Some(b)) if a.same_plugin(b))
 }

@@ -47,6 +47,8 @@ pub enum PluginTarget {
     Pad(usize),
     /// Effect in (bus, slot).
     Fx(usize, usize),
+    /// Analyzer slot.
+    Analyzer(usize),
 }
 
 pub struct Browser {
@@ -69,6 +71,9 @@ pub enum JobResult {
     /// A pitch-shifted copy of a vocal take, for a play-through lane on `pad`.
     Shifted { key: (usize, i32), pad: usize, sample: SampleData },
     Failed(String),
+    /// A song export finished; the live engine takes back the plugins in `detached`.
+    Exported { path: std::path::PathBuf, secs: f32, peak: f32, detached: Vec<PluginTarget> },
+    ExportFailed { error: String, detached: Vec<PluginTarget> },
 }
 
 /// What the Key/BPM Harmonizer believes about the focused pad; editable before conforming.
@@ -102,6 +107,11 @@ pub struct RollUi {
     pub scroll: f32,
     /// Keep the playhead in view while playing. Shared with the step sequencer's pages.
     pub follow: bool,
+    /// A drag in the velocity lane: the start tick of the stack being moved, and its notes
+    /// with their velocities when the drag reached it.
+    pub vel_drag: Option<(u32, Vec<(usize, u8)>)>,
+    /// How far Randomize may move a velocity, 0..1 of the full range either way.
+    pub vel_random: f32,
 }
 
 pub struct RollDrag {

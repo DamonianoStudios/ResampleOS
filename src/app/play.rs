@@ -18,19 +18,32 @@ impl App {
 
     pub fn toggle_play(&mut self) {
         let on = !self.playing();
+        if on && self.exporting {
+            self.status = "Exporting: playback comes back when it is done".into();
+            return;
+        }
         if on
             && let Resample::Recording { target, bar_aligned: false, .. } = self.resample {
                 // Starting the transport mid-take restarts the take on the downbeat.
                 self.resample =
                     Resample::Recording { target, start: self.shared.ring.written(), bar_aligned: true };
             }
+        // Starting from the arrangement plays the song from the insert marker; starting
+        // from the pads plays the loops.
+        let song = on && self.view == View::Arrange;
         if on {
-            self.scenes_on_play();
+            self.arr.overridden = false;
+            self.set_song_mode(song);
+            if song {
+                self.locate(self.arr.cursor);
+            } else {
+                self.scenes_on_play();
+            }
         } else {
             self.scenes_on_stop();
         }
         self.send(Cmd::Play(on));
-        if on {
+        if on && !song {
             self.scenes_after_play();
         }
     }
@@ -148,5 +161,46 @@ impl App {
         let start = ((p.start / snap).round() * snap).rem_euclid(len_ticks);
         self.pads[p.pad].pattern.notes.push(Note::new(start as u32, len as u32, p.pitch, p.vel.max(1)));
         self.push_pattern(p.pad);
+    }
+}
+
+impl App {
+    /// Lights the controller's pads to match the screen: the bank on screen, with pads
+    /// sounding brightest, the selected one next, and loaded ones faintly. In perform
+    /// mode the pads are loops: playing, queued, or there.
+    pub(super) fn pad_lights(&mut self) {
+        if !self._midi.leds.connected() {
+            return;
+        }
+        let mut levels = [midi::LED_OFF; 16];
+        if self.perform {
+            let playing = self.shared.scene_index.load(Ordering::Relaxed) as usize;
+            for (i, level) in levels.iter_mut().enumerate() {
+                *level = if i >= self.scenes.len() {
+                    midi::LED_OFF
+                } else if self.playing() && i == playing {
+                    midi::LED_PLAYING
+                } else if self.queued_scene == Some(i) {
+                    midi::LED_SELECTED
+                } else {
+                    midi::LED_LOADED
+                };
+            }
+        } else {
+            for (i, level) in levels.iter_mut().enumerate() {
+                let pad = self.bank * 16 + i;
+                let Some(p) = self.pads.get(pad) else { continue };
+                *level = if crate::shared::f32_load(&self.shared.pad_level[pad]) > 0.01 {
+                    midi::LED_PLAYING
+                } else if pad == self.selected {
+                    midi::LED_SELECTED
+                } else if !p.is_empty() {
+                    midi::LED_LOADED
+                } else {
+                    midi::LED_OFF
+                };
+            }
+        }
+        self._midi.leds.show(levels);
     }
 }

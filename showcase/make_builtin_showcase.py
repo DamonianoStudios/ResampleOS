@@ -225,6 +225,29 @@ SCENES = [
 ]
 CHAIN = [0, 1, 2, 3, 1, 2, 4]
 
+# ---------------------------------------------------------------- the arrangement
+
+
+def arrangement():
+    """The chain laid out on the song timeline, a section and a clip per pad for each
+    entry, and one change only the arrangement can make: the kick and bass drop out for
+    the first two bars of the second Verse A."""
+    tracks, sections, at = {}, [], 0
+    for k, s in enumerate(CHAIN):
+        sc = SCENES[s]
+        length = sc["bars"] * BAR
+        sections.append({"start": at, "len": length, "scene": s})
+        for pad, pat in sc["patterns"]:
+            if not pat["notes"]:
+                continue
+            clip = {"start": at, "len": length, "offset": 0, "scene": s}
+            if k == 4 and pad in (P["Kick"], P["Bass"]):
+                clip = {"start": at + 2 * BAR, "len": length - 2 * BAR, "offset": 2 * BAR, "scene": s}
+            tracks.setdefault(pad, []).append(clip)
+        at += length
+    return {"tracks": [[pad, clips] for pad, clips in sorted(tracks.items())], "sections": sections, "brace": None, "brace_on": False}
+
+
 # ---------------------------------------------------------------- the file
 
 
@@ -239,6 +262,7 @@ def main():
         "buses": BUSES, "conform_mode": "Smart", "auto_conform": False, "preserve_transients": True,
         "pads": pads, "fx_plugins": [], "scenes": SCENES, "scene": 0, "chain": CHAIN, "chain_on": True,
         "vocal_fx": {"gate_db": -80.0, "deess": 0.0, "duck_bus": 0},
+        "arrangement": arrangement(),
     }
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "project.json").write_text(json.dumps(project, indent=1), encoding="utf-8", newline="\n")

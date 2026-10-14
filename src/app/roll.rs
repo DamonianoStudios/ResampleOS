@@ -93,4 +93,36 @@ impl App {
         self.roll.sel_pad = self.selected;
         self.roll.sel = (0..self.pads[self.selected].pattern.notes.len()).collect();
     }
+
+    /// The notes of the selected pad that belong to the selection, if it is that pad's.
+    pub fn roll_selected(&self) -> &[usize] {
+        if self.roll.sel_pad == self.selected { &self.roll.sel } else { &[] }
+    }
+
+    /// Moves each velocity by a random amount, up to `roll.vel_random` of the range either
+    /// way: the selected notes, or every note when none is selected.
+    pub fn roll_randomize_velocity(&mut self) {
+        let sel = self.selected;
+        let chosen: Vec<usize> = self.roll_selected().to_vec();
+        let notes = &mut self.pads[sel].pattern.notes;
+        let targets: Vec<usize> = if chosen.is_empty() { (0..notes.len()).collect() } else { chosen };
+        if targets.is_empty() {
+            self.status = "No notes to randomize".into();
+            return;
+        }
+        let mut seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0x9e37_79b9, |d| d.subsec_nanos() | 1);
+        let reach = self.roll.vel_random.clamp(0.0, 1.0) * 127.0;
+        for &i in &targets {
+            let Some(n) = notes.get_mut(i) else { continue };
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            let r = seed as f32 / u32::MAX as f32 * 2.0 - 1.0;
+            n.vel = (n.vel as f32 + r * reach).round().clamp(1.0, 127.0) as u8;
+        }
+        self.push_pattern(sel);
+        self.status = format!("Randomized {} velocities by up to ±{:.0}", targets.len(), reach);
+    }
 }

@@ -106,40 +106,95 @@ pub fn hermite(buf: &[f32], pos: f64) -> f32 {
     ((c3 * t + c2) * t + c1) * t + y1
 }
 
-/// Reads `buf` at `speed` (>1 = shorter and higher). When speeding up, a one-pole
-/// lowpass ahead of the read keeps the worst of the aliasing out.
+/// Zero crossings of the resampling kernel on each side of its centre.
+const SINC_ZEROS: usize = 24;
+/// Kernel values stored per zero crossing; read between them linearly.
+const SINC_STEPS: usize = 512;
+
+/// A Kaiser-windowed sinc from its centre out to [`SINC_ZEROS`] crossings, sampled
+/// [`SINC_STEPS`] times per crossing. Beta 9 keeps the stopband about 90 dB down.
+fn sinc_table() -> &'static [f32] {
+    static TABLE: std::sync::OnceLock<Vec<f32>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        fn bessel_i0(x: f64) -> f64 {
+            let (mut sum, mut term) = (1.0, 1.0);
+            for k in 1..40 {
+                term *= (x / (2.0 * k as f64)).powi(2);
+                sum += term;
+            }
+            sum
+        }
+        let beta = 9.0;
+        let len = SINC_ZEROS * SINC_STEPS;
+        (0..=len + 1)
+            .map(|i| {
+                let t = i as f64 / SINC_STEPS as f64;
+                if t >= SINC_ZEROS as f64 {
+                    return 0.0;
+                }
+                let x = std::f64::consts::PI * t;
+                let sinc = if i == 0 { 1.0 } else { x.sin() / x };
+                let w = t / SINC_ZEROS as f64;
+                (sinc * bessel_i0(beta * (1.0 - w * w).max(0.0).sqrt()) / bessel_i0(beta)) as f32
+            })
+            .collect()
+    })
+}
+
+/// Reads `buf` at `speed` (>1 = shorter and higher) through a band-limited (windowed
+/// sinc) interpolator, as tape or a varispeed does it but without its aliasing: reading
+/// faster lowers the kernel's cutoff with the new Nyquist, so nothing folds back down.
 pub fn resample_channel(buf: &[f32], speed: f64) -> Vec<f32> {
-    if buf.is_empty() || (speed - 1.0).abs() < 1e-9 {
-        return buf.to_vec();
+    resample_pair(buf, None, speed).0
+}
+
+/// [`resample_channel`] for one or two channels at once, working out each kernel value
+/// once for both.
+fn resample_pair(l: &[f32], r: Option<&[f32]>, speed: f64) -> (Vec<f32>, Vec<f32>) {
+    if l.is_empty() || (speed - 1.0).abs() < 1e-9 {
+        return (l.to_vec(), r.map_or_else(Vec::new, <[f32]>::to_vec));
     }
-    let filtered;
-    let src: &[f32] = if speed > 1.05 {
-        let a = (1.0 - (-std::f64::consts::PI / speed).exp()) as f32;
-        let mut f = Vec::with_capacity(buf.len());
-        let (mut s1, mut s2) = (0f32, 0f32);
-        for &x in buf {
-            s1 += a * (x - s1);
-            s2 += a * (s1 - s2);
-            f.push(s2);
+    let table = sinc_table();
+    // Just inside the lower of the two Nyquists, so the kernel's roll-off sits above
+    // what is kept rather than across it.
+    let cutoff = 0.97 * (1.0 / speed).min(1.0);
+    let reach = (SINC_ZEROS as f64 / cutoff).ceil() as isize;
+    let steps = cutoff * SINC_STEPS as f64;
+    let n = l.len() as isize;
+    let out_len = (l.len() as f64 / speed).round() as usize;
+    let (mut ol, mut or) = (Vec::with_capacity(out_len), Vec::with_capacity(if r.is_some() { out_len } else { 0 }));
+    let last = table.len() - 1;
+    for i in 0..out_len {
+        let pos = i as f64 * speed;
+        let centre = pos.floor() as isize;
+        let (lo, hi) = ((centre - reach + 1).max(0) as usize, (centre + reach).min(n - 1) as usize);
+        // Distance from each input sample to the read position, in kernel steps.
+        let mut d = (pos - lo as f64) * steps;
+        let (mut al, mut ar) = (0f32, 0f32);
+        for j in lo..=hi {
+            let a = d.abs();
+            let k = a as usize;
+            if k < last {
+                let f = (a - k as f64) as f32;
+                let h = table[k] + (table[k + 1] - table[k]) * f;
+                al += l[j] * h;
+                if let Some(r) = r {
+                    ar += r[j] * h;
+                }
+            }
+            d -= steps;
         }
-        // Run it backwards too so the filter adds no phase shift to transients.
-        let (mut s1, mut s2) = (0f32, 0f32);
-        for x in f.iter_mut().rev() {
-            s1 += a * (*x - s1);
-            s2 += a * (s1 - s2);
-            *x = s2;
+        ol.push(al * cutoff as f32);
+        if r.is_some() {
+            or.push(ar * cutoff as f32);
         }
-        filtered = f;
-        &filtered
-    } else {
-        buf
-    };
-    let out_len = (buf.len() as f64 / speed).round() as usize;
-    (0..out_len).map(|i| hermite(src, i as f64 * speed)).collect()
+    }
+    (ol, or)
 }
 
 pub fn resample(s: &SampleData, speed: f64) -> SampleData {
-    SampleData::new(resample_channel(&s.l, speed), resample_channel(&s.r, speed))
+    let (l, r) = resample_pair(&s.l, Some(&s.r), speed);
+    SampleData::new(l, r)
 }
 
 /// Decodes any supported file and converts it to stereo at `target_rate`.
@@ -237,5 +292,62 @@ impl PeakCache {
             self.key = key;
         }
         &self.peaks
+    }
+}
+
+#[cfg(test)]
+mod resample_tests {
+    use super::*;
+
+    fn sine(hz: f32, n: usize, sr: f32) -> Vec<f32> {
+        (0..n).map(|i| (std::f32::consts::TAU * hz * i as f32 / sr).sin() * 0.5).collect()
+    }
+
+    fn rms(v: &[f32]) -> f32 {
+        (v.iter().map(|x| x * x).sum::<f32>() / v.len().max(1) as f32).sqrt()
+    }
+
+    /// Residual after removing the best-fitting sine at `hz`: what is left is distortion
+    /// and noise.
+    fn residual(v: &[f32], hz: f32, sr: f32) -> f32 {
+        let (mut a, mut b) = (0.0f64, 0.0f64);
+        for (i, x) in v.iter().enumerate() {
+            let w = std::f64::consts::TAU * hz as f64 * i as f64 / sr as f64;
+            a += *x as f64 * w.sin();
+            b += *x as f64 * w.cos();
+        }
+        let (a, b) = (2.0 * a / v.len() as f64, 2.0 * b / v.len() as f64);
+        let r: Vec<f32> = v
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                let w = std::f64::consts::TAU * hz as f64 * i as f64 / sr as f64;
+                *x - (a * w.sin() + b * w.cos()) as f32
+            })
+            .collect();
+        rms(&r)
+    }
+
+    #[test]
+    fn varispeed_moves_a_tone_cleanly_and_keeps_its_level() {
+        let sr = 48000.0;
+        for (speed, hz) in [(1.5, 1000.0), (0.75, 3000.0), (2.0, 5000.0), (1.0594631, 440.0)] {
+            let out = resample_channel(&sine(hz, 48000, sr), speed);
+            let mid = &out[2000..out.len() - 2000];
+            let moved = hz * speed as f32;
+            let res = residual(mid, moved, sr);
+            assert!(res < 0.5e-3, "speed {speed}: {hz} Hz to {moved} Hz leaves {res} of distortion");
+            assert!((rms(mid) - 0.5 / 2f32.sqrt()).abs() < 0.01, "level changed: {}", rms(mid));
+        }
+    }
+
+    #[test]
+    fn reading_faster_does_not_fold_the_top_down() {
+        // 18 kHz read at 1.5x would land at 27 kHz, above Nyquist: it must vanish rather
+        // than alias down to 21 kHz.
+        let sr = 48000.0;
+        let out = resample_channel(&sine(18000.0, 48000, sr), 1.5);
+        let mid = &out[2000..out.len() - 2000];
+        assert!(rms(mid) < 0.002, "aliasing left {}", rms(mid));
     }
 }

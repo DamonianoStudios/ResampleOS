@@ -31,7 +31,7 @@ impl Scene {
         Scene { name: String::new(), bars: bars.clamp(1, 16), patterns: Vec::new(), automation: Vec::new() }
     }
 
-    fn pattern(&self, pad: usize) -> Pattern {
+    pub fn pattern(&self, pad: usize) -> Pattern {
         self.patterns.iter().find(|(i, _)| *i == pad).map(|(_, p)| p.clone()).unwrap_or_default()
     }
 }
@@ -66,6 +66,7 @@ impl App {
     }
 
     pub fn push_scene_len(&mut self) {
+        self.arr.dirty = true;
         self.send(Cmd::SceneLen(self.scene_ticks(self.scene)));
     }
 
@@ -100,6 +101,15 @@ impl App {
     /// on the next bar line, if that is how launching is set).
     pub fn launch_scene(&mut self, to: usize) {
         if to >= self.scenes.len() {
+            return;
+        }
+        if self.playing() && self.song_mode {
+            // A loop launched over the song takes over from its top, at once, until
+            // Back to arrangement.
+            self.show_scene(to, true);
+            self.set_song_mode(false);
+            self.arr.overridden = true;
+            self.status = format!("{} has taken over from the arrangement", self.scene_label(to));
             return;
         }
         if !self.playing() {
@@ -249,6 +259,7 @@ impl App {
         for s in self.chain.iter_mut().filter(|s| **s > at) {
             *s -= 1;
         }
+        self.arrangement.loop_removed(at);
         self.chain_pos = 0;
         self.shared.scene_index.store(self.scene as u32, Ordering::Relaxed);
     }

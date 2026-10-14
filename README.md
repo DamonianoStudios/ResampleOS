@@ -27,15 +27,16 @@ A short tour of the tabs: [demo-tour.gif](docs/images/demo-tour.gif).
 - **Resample to a pad.** Arm, hit the destination pad, perform, and the result (pads, bus effects and all) is baked onto that pad. If the transport is running the take starts on the next downbeat and is trimmed to whole bars.
 - **Skip-back.** The last five minutes of output are always in memory. Grab the last 16 bars with one key, or drag a selection from the top-bar waveform onto a pad.
 - **Take stack.** Every destructive edit (crop, reverse, normalize, pitch, conform, baked effects) becomes a new take. Each pad keeps 16 and can step back through them on its own.
-- **Key and tempo conform.** Samples are analysed on load for tempo, key and transients. One action stretches and re-pitches a sample to the project, keeping transients intact.
+- **Key and tempo conform.** Samples are analysed on load for tempo, key, pitch and transients. One action stretches and re-pitches a sample to the project, keeping transients intact, by phase vocoder (with optional formant keeping), beat slicing, or true varispeed.
 - **Transient chop.** One key spreads a sample's slices across the next empty bank.
 - **Piano roll and step sequencer.** Scale-locked piano roll with a velocity lane and free microtiming; a step grid per bank for drum patterns; swing and humanize on top.
 - **Loops, chain and perform mode.** Up to sixteen loops of 1 to 16 bars over the same pads, switched on the beat, chained into an arrangement, or launched live from the pads.
-- **Automation.** Bus effect knobs, bus levels and pans, and pad volume, pan and cutoff can move through each loop: drawn in a lane, or recorded by turning the control while the loop plays.
+- **Arrangement.** A song timeline beside the pads, as long as the song needs: a track per pad, clips that play the pad's loops, sections that bring their loop's automation, a loop brace, and the chain written out as a song in one click. Exports to WAV.
+- **Automation.** Bus effects, levels and pans, pad volume, pan and cutoff, drum synth knobs and any plugin parameter can move through each loop: drawn in a lane with straight or curved segments, or recorded by turning the control (in ResampleOS or in a plugin's window) while the loop plays.
 - **Drum synth.** Five engines (kick, snare and clap, metallic, FM, modal) with eight macros each, velocity and random amounts per knob, knob values locked to individual steps, seven 16-pad kits, and one key to bake a hit into a sample that can always be turned back into the synth.
 - **Vocal takes.** A vocal pad records a take each time round the loop, with swipe comping, cut, move and slip editing, doubles, and baking to a pad or to a bank of phrases. A dedicated vocal bus has scale-locked pitch correction, levelling and a dub throw.
 - **Performance buses.** Four buses, a vocal bus and a master, three effect slots each: vinyl, cassette, 3-band EQ, DJ isolator and filter, bit-crush, compressor, tape delay, reverb. Buses can feed later buses and can be sidechained from one another.
-- **VST3 hosting.** Instruments on pads and effects on buses, with a scanner that copes with libraries of a thousand plugins or more.
+- **VST3 and CLAP hosting.** Instruments on pads, effects on buses and four analyzer slots that listen without touching the mix, with a scanner that copes with libraries of a thousand plugins or more.
 - **External input**, **MIDI controllers**, **project-wide undo and redo**.
 
 ## Getting started
@@ -86,19 +87,18 @@ Press **F1** in the app for the shortcut list.
 | [User guide](docs/USER_GUIDE.md) | Every part of the app, in the order you meet it |
 | [Shortcuts and MIDI](docs/SHORTCUTS.md) | Keyboard reference and the controller mapping |
 | [Architecture](docs/ARCHITECTURE.md) | How the engine, UI and plugin hosting fit together |
+| [Roadmap](docs/ROADMAP.md) | Where ResampleOS is going: the arrangement view and the road to 1.0 |
 | [Contributing](CONTRIBUTING.md) | Building, testing and the conventions the code follows |
 
 ## Known limitations
 
-- VST3 only: no VST2, CLAP or AU.
-- Some VST3 effects load and show their editor but pass no audio. In testing this affected three of fourteen vendors. A silent effect mutes its bus.
+- VST3 and CLAP only: no VST2 or AU. CLAP editors open on Windows only.
+- Some VST3 effects load and show their editor but pass no audio (three of fourteen vendors in testing). The bus now plays without such an effect rather than going silent, and the slot is marked.
 - Hosted plugins are not crash-isolated once loaded; only scanning is.
-- Changing the audio device, sample rate, buffer size or skip-back length takes effect after a restart.
-- Pitch warps and vocal doubles move formants with the pitch. Only the Pitch Lock effect has separate formant control.
-- Vocal recording has no automatic latency measurement: the input latency is set by hand. Monitoring through the app is as fast as the audio device allows, which on shared-mode Windows audio is not instant.
+- A new sample rate needs the app to restart (the project is carried across). Device, buffer size and skip-back length change in place.
+- Input latency is measured with a loopback (a cable from output to input, or a microphone near a speaker). Monitoring through the app is as fast as the audio device allows, which on shared-mode Windows audio is not instant.
 - The pitch correction and the vocal comp tools were verified with test signals and imported audio, not with a live microphone.
-- Projects store each pad's active take, not its whole take stack.
-- Hardware controllers get no LED feedback, and there is no controller mapping for vocal comping (the keyboard has one).
+- Pad lights follow the common convention (a pad's note, velocity for brightness); controllers that need their own lighting messages stay dark. There is no controller mapping for vocal comping (the keyboard has one).
 
 ## License
 
@@ -106,4 +106,4 @@ ResampleOS is released under the [MIT License](LICENSE).
 
 ## Acknowledgements
 
-ResampleOS is built on [egui](https://github.com/emilk/egui), [cpal](https://github.com/RustAudio/cpal), [symphonia](https://github.com/pdeljanov/Symphonia), [rustfft](https://github.com/ejmahler/RustFFT), [midir](https://github.com/Boddlnagg/midir), [rtrb](https://github.com/mgeier/rtrb) and [vst3-host](https://github.com/HelgeSverre/rust-vst3-host). VST is a trademark of Steinberg Media Technologies GmbH.
+ResampleOS is built on [egui](https://github.com/emilk/egui), [cpal](https://github.com/RustAudio/cpal), [symphonia](https://github.com/pdeljanov/Symphonia), [rustfft](https://github.com/ejmahler/RustFFT), [midir](https://github.com/Boddlnagg/midir), [rtrb](https://github.com/mgeier/rtrb) and [vst3-host](https://github.com/HelgeSverre/rust-vst3-host) and [clap-sys](https://github.com/micahrj/clap-sys). VST is a trademark of Steinberg Media Technologies GmbH.

@@ -5099,5 +5099,470 @@
   "gate_db": -80.0,
   "deess": 0.0,
   "duck_bus": 0
+ },
+ "arrangement": {
+  "tracks": [
+   [
+    0,
+    [
+     {
+      "start": 7680,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 23040,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 49920,
+      "len": 11520,
+      "offset": 3840,
+      "scene": 1
+     },
+     {
+      "start": 61440,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     }
+    ]
+   ],
+   [
+    1,
+    [
+     {
+      "start": 7680,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 23040,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 46080,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 61440,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     }
+    ]
+   ],
+   [
+    2,
+    [
+     {
+      "start": 23040,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 61440,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     }
+    ]
+   ],
+   [
+    3,
+    [
+     {
+      "start": 23040,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 38400,
+      "len": 7680,
+      "offset": 0,
+      "scene": 3
+     },
+     {
+      "start": 61440,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     }
+    ]
+   ],
+   [
+    4,
+    [
+     {
+      "start": 0,
+      "len": 7680,
+      "offset": 0,
+      "scene": 0
+     },
+     {
+      "start": 7680,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 23040,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 46080,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 61440,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 76800,
+      "len": 7680,
+      "offset": 0,
+      "scene": 4
+     }
+    ]
+   ],
+   [
+    5,
+    [
+     {
+      "start": 7680,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 23040,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 46080,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 61440,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     }
+    ]
+   ],
+   [
+    6,
+    [
+     {
+      "start": 23040,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 61440,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     }
+    ]
+   ],
+   [
+    7,
+    [
+     {
+      "start": 38400,
+      "len": 7680,
+      "offset": 0,
+      "scene": 3
+     }
+    ]
+   ],
+   [
+    8,
+    [
+     {
+      "start": 7680,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 23040,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 38400,
+      "len": 7680,
+      "offset": 0,
+      "scene": 3
+     },
+     {
+      "start": 49920,
+      "len": 11520,
+      "offset": 3840,
+      "scene": 1
+     },
+     {
+      "start": 61440,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     }
+    ]
+   ],
+   [
+    9,
+    [
+     {
+      "start": 0,
+      "len": 7680,
+      "offset": 0,
+      "scene": 0
+     },
+     {
+      "start": 7680,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 23040,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 38400,
+      "len": 7680,
+      "offset": 0,
+      "scene": 3
+     },
+     {
+      "start": 46080,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 61440,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 76800,
+      "len": 7680,
+      "offset": 0,
+      "scene": 4
+     }
+    ]
+   ],
+   [
+    10,
+    [
+     {
+      "start": 23040,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 61440,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     }
+    ]
+   ],
+   [
+    11,
+    [
+     {
+      "start": 0,
+      "len": 7680,
+      "offset": 0,
+      "scene": 0
+     },
+     {
+      "start": 7680,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 23040,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 38400,
+      "len": 7680,
+      "offset": 0,
+      "scene": 3
+     },
+     {
+      "start": 46080,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 61440,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 76800,
+      "len": 7680,
+      "offset": 0,
+      "scene": 4
+     }
+    ]
+   ],
+   [
+    12,
+    [
+     {
+      "start": 38400,
+      "len": 7680,
+      "offset": 0,
+      "scene": 3
+     },
+     {
+      "start": 76800,
+      "len": 7680,
+      "offset": 0,
+      "scene": 4
+     }
+    ]
+   ],
+   [
+    13,
+    [
+     {
+      "start": 0,
+      "len": 7680,
+      "offset": 0,
+      "scene": 0
+     },
+     {
+      "start": 38400,
+      "len": 7680,
+      "offset": 0,
+      "scene": 3
+     }
+    ]
+   ],
+   [
+    14,
+    [
+     {
+      "start": 7680,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 23040,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     },
+     {
+      "start": 46080,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 61440,
+      "len": 15360,
+      "offset": 0,
+      "scene": 2
+     }
+    ]
+   ],
+   [
+    15,
+    [
+     {
+      "start": 7680,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     },
+     {
+      "start": 46080,
+      "len": 15360,
+      "offset": 0,
+      "scene": 1
+     }
+    ]
+   ]
+  ],
+  "sections": [
+   {
+    "start": 0,
+    "len": 7680,
+    "scene": 0
+   },
+   {
+    "start": 7680,
+    "len": 15360,
+    "scene": 1
+   },
+   {
+    "start": 23040,
+    "len": 15360,
+    "scene": 2
+   },
+   {
+    "start": 38400,
+    "len": 7680,
+    "scene": 3
+   },
+   {
+    "start": 46080,
+    "len": 15360,
+    "scene": 1
+   },
+   {
+    "start": 61440,
+    "len": 15360,
+    "scene": 2
+   },
+   {
+    "start": 76800,
+    "len": 7680,
+    "scene": 4
+   }
+  ],
+  "brace": null,
+  "brace_on": false
  }
 }

@@ -1,5 +1,6 @@
 //! The four-zone viewport plus floating windows.
 
+mod arrange;
 mod automation;
 mod browser;
 mod buses;
@@ -54,6 +55,17 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     egui::Panel::top("top_bar").exact_size(126.0).frame(theme::gutter(8, 8, 8, 3)).show(ui, |ui| top::draw(app, ui));
     egui::Panel::bottom("footer").exact_size(38.0).frame(theme::gutter(10, 10, 2, 6)).show(ui, |ui| footer::draw(app, ui));
     let width = ui.available_width();
+    if app.view == crate::app::View::Arrange {
+        egui::Panel::bottom("zone_c").exact_size(372.0).frame(theme::gutter(3, 8, 3, 3)).show(ui, |ui| buses::draw(app, ui));
+        egui::CentralPanel::default_margins().frame(theme::gutter(8, 8, 3, 3)).show(ui, |ui| {
+            let rect = ui.available_rect_before_wrap();
+            theme::card_in(ui, rect, None, |ui| arrange::draw(app, ui));
+        });
+        windows::draw(app, &ctx);
+        browser::draw(app, &ctx);
+        prefs::draw(app, &ctx);
+        return;
+    }
     egui::Panel::left("zone_a")
         .default_size((width * 0.36).clamp(380.0, 720.0))
         .resizable(true)

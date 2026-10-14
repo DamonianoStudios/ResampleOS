@@ -8,8 +8,12 @@ This guide walks through the app in the order you are likely to meet it. For a k
 - [Key and tempo conform](#key-and-tempo-conform)
 - [Capturing audio](#capturing-audio)
 - [Sequencing](#sequencing)
+- [The arrangement](#the-arrangement)
 - [Buses and effects](#buses-and-effects)
-- [VST3 plugins](#vst3-plugins)
+- [Automation](#automation)
+- [Drum synth](#drum-synth)
+- [Vocals](#vocals)
+- [Plugins (VST3 and CLAP)](#plugins-vst3-and-clap)
 - [Undo, takes and projects](#undo-takes-and-projects)
 - [Preferences](#preferences)
 - [Troubleshooting](#troubleshooting)
@@ -40,7 +44,7 @@ The pad LED colours mean:
 A pad is one of two kinds:
 
 - An **audio pad** holds a sample and plays it as a one-shot, gated, or as a latched loop.
-- A **MIDI pad** holds a pattern and plays the internal synth, a VST3 instrument, or another pad's sample at different pitches.
+- A **MIDI pad** holds a pattern and plays the internal synth, a plugin instrument (VST3 or CLAP), or another pad's sample at different pitches.
 
 Click a pad or press its key to play it. The pad's settings are in the row under the inspector's tabs: volume, pan, mute, solo, Stop, bus, choke group, play mode and reverse. Drag the pan box sideways (`Shift` for fine) and double-click it to centre.
 
@@ -93,11 +97,17 @@ The **Mod / Warp** tab has three panels.
 
 - **Pitch · Filter:** coarse and fine pitch, and a low-pass filter with a display of its response.
 - **LFO:** modulates pitch, volume, pan or the filter cutoff. Choose a shape (sine, triangle, saw, square) and a depth. The rate is either free, in Hz, or with **SYNC** on a note value locked to the project tempo: 4 bars down to 1/32, each straight, dotted or triplet. The scope draws two cycles of the wave at its depth, shows how far the modulation reaches (for example "pitch ±1.5 st"), and has a dot that follows the LFO as the engine runs it. A synced LFO starts its cycle when the transport starts.
-- **Warp:** changes pitch and length independently and bakes the result as a new take.
+- **Warp:** changes pitch and length and bakes the result as a new take, by one of three methods (the same choice is in the harmonizer):
+
+| Method | How | Best for |
+| --- | --- | --- |
+| Elastic | A phase vocoder: each partial keeps its own frequency, so pitch and length change independently and smoothly. Hits keep their attack when **Lock transients** is on. **Keep formants** holds the vowel and body of a voice or instrument in place while the pitch moves, so a shifted voice doesn't sound chipmunked or giant | Most material, and anything tonal: chords, pads, vocals, bass |
+| Beats | Splices the sound between hits, overlapping pieces where they match best | Drum loops you want to keep crisp and gritty; tonal parts may warble |
+| Varispeed | Changes the speed, as tape does: faster is higher and shorter, slower is lower and longer. The Shift and Length fields move together (+12 st is 50 %) | The sound of a record sped up or slowed down, with no processing artefacts |
 
 ## Key and tempo conform
 
-When a sample loads, ResampleOS estimates its tempo, its key, and, for a single-note sound, its pitch. `Ctrl+K` opens the harmonizer for the selected pad.
+When a sample loads, ResampleOS estimates its tempo, its key, and, for a single voice or instrument, its pitch: the note it sits on longest, so a melody reads as its home note, and vibrato, a missing fundamental or some noise don't throw it. `Ctrl+K` opens the harmonizer for the selected pad.
 
 - The detected values are shown with a confidence figure. If the tempo is off by a factor of two, use the `÷2` and `×2` buttons. You can also correct the key by hand.
 - **Conform to project** stretches the sample to the project tempo and shifts it to the project key, as a new take. `Enter` does the same.
@@ -111,6 +121,8 @@ Two conform modes are available, in the harmonizer and the footer:
 | Smart Conform | Chooses the shift that puts the most of the sample's notes onto degrees of the project scale. |
 
 With **Lock transients** on, the first few milliseconds of every hit pass through at original speed and only the decay between hits is stretched, so drums keep their attack.
+
+**Method** chooses how the conform is done (see **Warp** above). With **Varispeed**, tempo and pitch are tied: with Tempo ticked the tempo is matched and the pitch follows wherever it lands; with only Key ticked, the key is matched and the tempo follows. The result line shows both before you bake.
 
 Detection is an estimate. Sparse, rubato or very short material may come back with no tempo at all, and the app says so rather than guessing.
 
@@ -155,13 +167,14 @@ Sequenced pads play when the transport runs (`Space`). **Swing** in the top bar 
 
 Select an empty pad and press `Tab`, or make a pad a MIDI pad from its right-click menu.
 
-- **Engine** chooses what the pad plays: the internal synth (808 Sub, Saw Lead, Square Pluck, FM Keys), a VST3 instrument, or another pad's sample.
+- **Engine** chooses what the pad plays: the internal synth (808 Sub, Saw Lead, Square Pluck, FM Keys), a plugin instrument, or another pad's sample.
 - Click to add a note, drag to move it, drag its right edge to resize, right-click to delete.
 - Click a note to select it. `Shift`+click or `Ctrl`+click adds a note to the selection or takes it out, `Shift`+drag from an empty spot draws a box around several, and `Ctrl+A` selects everything. `Esc` clears the selection.
 - Dragging or resizing any selected note moves or resizes the whole selection.
 - Hold `Ctrl` while dragging to duplicate: copies stay behind and the notes you grabbed move. `Ctrl+D` repeats the selection directly after itself.
 - With notes selected, `Shift+Up` and `Shift+Down` move them an octave, `Up` and `Down` move them one step (one scale degree while scale lock is on), `Left` and `Right` nudge them by one grid step, and `Delete` removes them.
-- The lane at the bottom sets velocity.
+- The lane at the bottom sets velocity: click or drag a stem up and down. Each note has a dot at the top of its stem, so the notes of a chord can be told apart. Where several notes start together, the edit moves them all, the loudest following the pointer and the rest keeping their distance from it, so a chord keeps its voicing. Select one or more of them first (click the note in the grid) and only those move.
+- **Randomize vel** moves each velocity by a random amount, up to the figure beside it either way (±20 % to start with): the selected notes, or every note when none is selected. Press it again for another roll; `Ctrl+Z` takes it back.
 - **Snap** sets the grid. Off gives free placement; holding `Alt` ignores the grid for one drag.
 - **Scale lock** greys out notes outside the project scale and keeps new notes on it.
 - **Ghosts** shows the other MIDI pads' notes in the bank, faintly, as a guide.
@@ -197,9 +210,47 @@ Press `G`. Each row is a pad of the current bank; each column is a step. Click o
 
 With **Roll** on (`T`), a held pad retriggers at the rate chosen beside it.
 
+## The arrangement
+
+![The arrangement view](images/arrangement.png)
+
+Loops are where parts are made; the **arrangement** is where they become a song, as long as you like. **Song** in the top bar (or `F3`) switches the middle of the screen between the pads and the song timeline; the skip-back strip and the buses stay where they are.
+
+- **Each pad is a track.** Every pad that plays in any loop gets one, with its name, kind, and mute and solo (the pad's own, so they act in the loops too). Clicking the name selects the pad, so the buses and, back on the pads, the inspector follow it.
+- **A clip plays one of the pad's loops.** It plays that loop's pattern for the pad, round and round to fill the clip, from wherever its start has been trimmed to. Edit the loop's pattern and every clip playing it changes with it.
+- **The LOOPS lane** above the tracks shows which loop each stretch of the song came from. A section also plays its loop's automation, so a filter sweep drawn in a loop happens wherever that loop is in the song.
+
+**Building a song**
+
+- **Chain to song** writes the chain out after the end of the song: a section per loop, a clip per pad. With no chain, it writes the loop on screen. This is the quickest way from a jam to a song.
+- **Put loop** puts any loop in at the insert marker, over whatever is there.
+- **Double-click** an empty stretch of a track to add a clip of the loop on screen (or the first loop the pad plays in), one loop long.
+- **Drag** a clip to move it (the selection moves together; `Shift`+click adds to it). **Drag an edge** to trim it: trimming the start keeps the pattern where it was in time, so a clip can start part-way into its loop. Anything a clip is dropped on is cut back to make room.
+- `Ctrl+D` duplicates the selection after itself, `Ctrl+E` splits clips at the insert marker (the selected ones, or every clip under it), `Del` deletes.
+- **Right-click a clip** to open its loop, switch it to another loop, make it unique, duplicate, split or delete it.
+- **Make unique** copies the clip's loop into a new loop and points the selected clips at it, so they can be edited without changing the rest of the song. A project holds up to sixteen loops.
+- **Double-click a clip** to open its loop on the pads, with that pad selected, in the piano roll or step sequencer.
+- **Sections** move with their clips: drag one in the LOOPS lane, or right-click it to duplicate or delete it with everything in it. Double-click a section to open its loop.
+
+**Playing**
+
+- Press play in the Song view to play the song from the **insert marker** (the white triangle). Click the ruler to move it (and the playhead, while playing); click an empty stretch of a track to move it while stopped. `Home` goes back to the start.
+- **Loop** plays round the loop brace: drag across the thin strip above the ruler to set it, click the strip to turn it on and off.
+- **Follow** keeps the playhead in view. `Ctrl`+scroll zooms around the pointer, `Shift`+scroll moves along the song, and scroll moves up and down the tracks.
+- Pads stay playable over the song. Launching a loop while the song plays takes over from it at once; **Back to arrangement** picks the song up again where it would have been.
+- Press play in the Pads view and the loops play as before.
+
+**Exporting**
+
+**Export song…** renders the song from start to end (or the loop brace, when it is on) to a WAV file, in 24-bit, 16-bit (dithered) or 32-bit float, with the tails of the last notes and effects. The export runs through the same engine as playback, faster than real time, so the file is what you heard. Hosted plugins are lent to the export while it runs, so playback waits until it is done.
+
+A project with a song opens on the Song view.
+
 ## Buses and effects
 
 Each pad is sent either straight to the master (**Thru**), to one of four buses, or to the vocal bus, **Bus V**. Each bus is laid out like a console channel: three effect slots, the output under them (the master or a later bus), and a long level fader with the bus's meter at the right (drag it, `Shift` for fine, double-click for 0 dB). The pan is the box beside **SC**: drag sideways, double-click to centre. Bus V comes after Bus 1 to 4, so any of them can feed it.
+
+**Analyzers.** Under the master's slots, **Analyzers** opens four slots for metering plugins such as SPAN, Insight or Lucent. Each listens to the bus you choose (the master to start with), after its fader, and what it puts out is not heard, so an analyzer never changes the sound and never takes up an effect slot. Click a slot's plugin to open its window. Analyzers are saved with the project.
 
 | Effect | Controls |
 | --- | --- |
@@ -235,14 +286,18 @@ The SC button is lit purple when ducking and green when swelling.
 
 Automation moves a control through a loop: a filter opening over the intro, an echo thrown on the last beat, the master fading at the end. Each loop has its own automation, which switches with the loop on the beat.
 
-These can be automated: every built-in effect knob and EQ slider on the buses, each bus's level and pan, and each pad's volume, pan and filter cutoff.
+These can be automated: every built-in effect knob and EQ slider on the buses, a plugin slot's Mix, each bus's level and pan, each pad's volume, pan and filter cutoff, the eight knobs of a drum pad, and the parameters of every loaded plugin (instrument or effect, VST3 or CLAP).
 
-- **Right-click a control** and choose **Automate**. It gets a lane in the **Automation** tab, starting flat at where the control is set.
-- **Or record it:** in the Automation tab turn on **Rec**, press play, and move the control. The move is written into the loop as the playhead passes; move it again on a later pass to write over it.
+- **Right-click a control** and choose **Automate**. It gets a lane in the **Automation** tab, starting flat at where the control is set. On a drum pad this works on the knobs while **Value** is chosen above them.
+- **A plugin's controls:** move the control in the plugin's own window, then click **Automate …** in the Automation tab, which names the control you moved last. Or open **Add lane**, pick the plugin, and type in the filter to find the parameter.
+- **Or record it:** in the Automation tab turn on **Rec**, press play, and move the control (in ResampleOS or in a plugin's window). The move is written into the loop as the playhead passes; move it again on a later pass to write over it.
 - **Edit a lane** in the Automation tab: click to add a point, drag a point to move it, right-click it to delete it. Points snap to the grid chosen beside **Snap**; hold `Alt` to place them freely. **Flat** takes a lane back to one point; **Remove** stops automating that control in this loop.
+- **Bend a segment:** between two points sits a small ring. Drag it up or down and the line between them curves through it: an easy start and a fast finish, or the other way round. Double-click the ring to straighten the line again.
 - **Add lane** offers everything that can be automated, without hunting for the control.
 
-Lanes are straight lines between points; before the first point and after the last, the value holds. While the transport runs, automation takes over the control; the control itself shows where you set it by hand, with a small amber dot to say something is moving it. When the transport stops or the loop changes to one that does not automate it, it goes back to where you set it.
+Before the first point and after the last, the value holds. While the transport runs, automation takes over the control. The control itself keeps showing where you set it by hand, with a small amber dot to say something is moving it and a thin amber bar along its bottom edge showing where automation has it now. When the transport stops or the loop changes to one that does not automate it, it goes back to where you set it; so does a plugin parameter.
+
+A drum knob's automation changes the hits that start while it is moving; a hit already sounding keeps the sound it started with, as with step locks.
 
 ## Drum synth
 
@@ -298,7 +353,7 @@ A **vocal pad** records takes over the playing loop, lets you build one good per
 - **Loop / Free:** Loop makes a take per pass of the loop. Free records one continuous take for as long as the transport runs, while you launch loops or play the chain, and marks where each loop took over. A free take plays on across loop changes.
 - **Punch:** drag a range on the ruler, turn Punch on, and only that range is recorded and put into the comp. Click the ruler to clear the range.
 - **Mon:** hear yourself through Bus V while armed. Turn it off if you monitor directly from your audio interface.
-- **Latency (ms):** recorded audio always arrives a little late. Takes are moved earlier by this amount. If your takes sit behind the beat, raise it until they sit on it; the setting is remembered for the machine.
+- **Latency (ms):** recorded audio always arrives a little late. Takes are moved earlier by this amount. **Measure** sets it for you: connect an output of your interface to the input you record from with a cable (or hold the microphone close to a speaker), choose that input, and click. A few short chirps play, and the time they take to come back is the latency. You can also set it by hand: if your takes sit behind the beat, raise it until they sit on it. The setting is remembered for the machine.
 - While a pad is armed its own comp is silent, so you sing against the beat and not against yourself.
 - **Import…** brings an audio file in as a take.
 - Up to three minutes of input are kept, which is the limit for one free take.
@@ -319,7 +374,7 @@ The top lane is the **comp**: what the pad plays. Under it are the takes, one co
 - Every clip edge is faded over 2 ms, and where the comp changes take the two are crossfaded, so cuts do not click.
 - Each lane has **M** (mute), **2x** (double) and **×** (remove), and a level.
 
-**Doubles.** **2x** copies a lane to a **THRU** lane. A take lane is heard only where the comp selects it; a THRU lane always plays alongside the comp. Each has its own level, pan and pitch in cents, and new doubles come panned to alternate sides and detuned a few cents, which is the usual thickening trick. Set the pitch to 1200 or -1200 for an octave harmony. Click **TAKE** or **THRU** on a lane to change what it is. Pitch on a lane moves the formants with it; the Pitch Lock effect on the bus is the one with separate formant control.
+**Doubles.** **2x** copies a lane to a **THRU** lane. A take lane is heard only where the comp selects it; a THRU lane always plays alongside the comp. Each has its own level, pan and pitch in cents, and new doubles come panned to alternate sides and detuned a few cents, which is the usual thickening trick. Set the pitch to 1200 or -1200 for an octave harmony. Click **TAKE** or **THRU** on a lane to change what it is. Pitch on a lane keeps the singer's formants where they were, so a harmony an octave up still sounds like the same voice; the Pitch Lock effect on the bus can also move formants on purpose.
 
 ### Bus V
 
@@ -339,18 +394,22 @@ Bus V can also key the ordinary sidechain of any other bus, and can be chosen as
 
 The Waveform tab's destructive edits do not apply to a vocal pad, since its audio is rebuilt from the takes. Bake it to a pad first.
 
-## VST3 plugins
+## Plugins (VST3 and CLAP)
 
-- **Instruments:** press `F2`, or choose **VST3 instrument…** from a pad's right-click menu or the piano roll's Engine menu.
-- **Effects:** choose **VST3 effect…** in a bus slot's menu.
+- **Instruments:** press `F2`, or choose **Load plugin instrument…** from a pad's right-click menu or **Plugin instrument…** from the piano roll's Engine menu.
+- **Effects:** choose **Plugin effect…** in a bus slot's menu.
 
-The first time the browser opens, it scans the standard VST3 folders. Each plugin is examined by a separate short-lived process, several at a time, with a time limit, so a plugin that hangs or crashes during the scan cannot take the app down. Some plugins show a dialog while being examined; these close by themselves when the time limit is reached. Results are cached, so later scans only look at plugins that are new or changed.
+VST3 and CLAP plugins are both supported and listed together; CLAP ones are marked **CLAP**. A plugin installed in both formats is listed twice, and either works.
+
+The first time the browser opens, it scans the standard VST3 and CLAP folders (on Windows, `Common Files\VST3` and `Common Files\CLAP`, plus the folders in `CLAP_PATH`). Each plugin is examined by a separate short-lived process, several at a time, with a time limit, so a plugin that hangs or crashes during the scan cannot take the app down. Some plugins show a dialog while being examined; these close by themselves when the time limit is reached. Results are cached, so later scans only look at plugins that are new or changed.
 
 A single plugin file can hold many plugins. Waves is the usual example: each WaveShell file holds the whole installed Waves collection, with separate mono and stereo versions of most plugins. Every plugin in a file is listed on its own, so search for the name and pick the version you want; on a bus, that is normally the Stereo one.
 
 In the browser, type to search by name or vendor, press `Enter` to load the top match, or double-click any row. Plugins that could not be read are listed under **Failed** with the reason.
 
-A loaded plugin opens its own editor window, follows the project tempo, and is saved with the project. Meters, gain-reduction displays and spectrum analysers in the editor follow the audio on the plugin's pad or bus.
+A loaded plugin opens its own editor window, follows the project tempo, and is saved with the project. Meters, gain-reduction displays and spectrum analysers in the editor follow the audio on the plugin's pad or bus. Its parameters can be automated: see [Automation](#automation).
+
+If an effect plugin puts out no sound at all for a few seconds while the bus is sending it a clear signal, the bus passes it by instead of going silent, and the slot says **silent**. It is heard again as soon as it makes a sound.
 
 ## Undo, takes and projects
 
@@ -361,7 +420,7 @@ There are two kinds of going back.
 
 Undo covers every loop and the chain. Moving between loops is not an edit and is not undone. Undo does not cover preferences, what is selected or shown, or the settings inside a plugin's own editor.
 
-**Projects** are folders. `Ctrl+S` writes `project.json`, a WAV per pad into `samples/`, and plugin states into `plugins/`. `Ctrl+O` opens a project folder. A project stores each pad's active take, not its earlier ones.
+**Projects** are folders. Undo covers the arrangement too. `Ctrl+S` writes `project.json` (with the arrangement in it), the pads' audio into `samples/` (every take: the active one as `A01.wav`, the others as `A01_take2.wav` and so on) and plugin states into `plugins/`. `Ctrl+O` opens a project folder. `Ctrl+N` (**File > New project**) starts an empty one, asking first if the open project has changes that are not saved.
 
 ## Preferences
 
@@ -374,9 +433,10 @@ Undo covers every loop and the chain. Moving between loops is not an edit and is
 | Buffer size | Smaller is more responsive and more demanding. Driver default is the safe choice |
 | Skip-back length | 1 to 15 minutes, with the memory it will use |
 | Scale | Size of the interface |
-| VST3 folders | Folders to scan besides the standard ones |
+| Light the controller's pads | Sends pad lights to connected MIDI controllers: bright while a pad sounds, dimmer when it is selected or loaded. In perform mode the lights show the loops |
+| Plugin folders | Folders to scan for VST3 and CLAP plugins besides the standard ones |
 
-Scale and plugin folders apply immediately. The audio settings and skip-back length apply the next time the app starts; **Save and restart** does that for you. Save your project first, because a restart discards unsaved work.
+Scale, pad lights and plugin folders apply immediately. A new output device, buffer size or skip-back length applies when you press **Save**: the audio restarts in place with the project as it is, and skip-back starts empty. A new sample rate needs the app to restart; **Save and restart** does that, and brings your project back as it was, saved or not.
 
 Preferences are kept in `%APPDATA%\ResampleOS\settings.json`, alongside the plugin cache.
 
@@ -384,7 +444,9 @@ Preferences are kept in `%APPDATA%\ResampleOS\settings.json`, alongside the plug
 
 **No sound.** Check the status line in the footer at startup: it names the output device in use, or says why audio could not start. Check that the pad is not muted, that no other pad is soloed, and that its bus and the master are not muted.
 
-**A bus went silent after loading a VST3 effect.** Some effects load but pass no audio in this version. Switch the slot off with its checkbox, or pick a different effect.
+**A plugin effect says "silent".** It loaded but passes no audio when hosted here, as a few do. The bus plays without it. Try the plugin's other format (VST3 or CLAP) if you have both, or pick a different effect.
+
+**Pads trigger by themselves with pad lights on.** A MIDI port is sending the lights straight back in (a virtual loopback port does). ResampleOS ignores notes that come back within a quarter of a second; if it still happens, turn pad lights off in Preferences.
 
 **The skip-back bar is not moving.** It is held for a selection. Click it, or press `Esc`.
 

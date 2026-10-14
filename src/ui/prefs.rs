@@ -82,8 +82,13 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
         });
         ui.add_space(8.0);
 
-        theme::title(ui, "VST3 FOLDERS", theme::AMBER);
-        ui.label(egui::RichText::new("The standard VST3 folders are always scanned. Add others here.").small().color(theme::DIM));
+        theme::title(ui, "MIDI CONTROLLERS", theme::AMBER);
+        ui.checkbox(&mut e.pad_lights, "Light the controller's pads")
+            .on_hover_text("Sends each pad's note back to the controllers it came from: bright while it sounds, dimmer when selected or loaded. Most pad controllers light up from these notes. Leave off if a synth shares the controller's MIDI port.");
+        ui.add_space(8.0);
+
+        theme::title(ui, "PLUGIN FOLDERS", theme::AMBER);
+        ui.label(egui::RichText::new("The standard VST3 and CLAP folders are always scanned. Add others here.").small().color(theme::DIM));
         let mut remove = None;
         for (i, dir) in e.vst3_dirs.iter().enumerate() {
             ui.horizontal(|ui| {
@@ -97,7 +102,7 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
             e.vst3_dirs.remove(i);
         }
         if ui.button("Add folder…").clicked()
-            && let Some(dir) = rfd::FileDialog::new().set_title("Folder containing VST3 plugins").pick_folder()
+            && let Some(dir) = rfd::FileDialog::new().set_title("Folder containing VST3 or CLAP plugins").pick_folder()
             && !e.vst3_dirs.contains(&dir)
         {
             e.vst3_dirs.push(dir);
@@ -105,12 +110,18 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
         ui.add_space(10.0);
         ui.separator();
 
-        let needs_restart = app.prefs_edit.needs_restart(&app.prefs);
+        let needs_restart = app.prefs_need_relaunch();
         if needs_restart {
             ui.label(
-                egui::RichText::new("Audio device, sample rate, buffer and skip-back length take effect after a restart.")
+                egui::RichText::new("A new sample rate takes effect after a restart. Your project is carried across it.")
                     .small()
                     .color(theme::AMBER),
+            );
+        } else if app.prefs_edit.needs_restart(&app.prefs) {
+            ui.label(
+                egui::RichText::new("Saving restarts the audio with the new settings. Skip-back starts empty.")
+                    .small()
+                    .color(theme::DIM),
             );
         }
         ui.horizontal(|ui| {
@@ -120,7 +131,7 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
             if needs_restart
                 && ui
                     .button("Save and restart")
-                    .on_hover_text("Closes and reopens ResampleOS. Save your project first: unsaved work is lost.")
+                    .on_hover_text("Closes and reopens ResampleOS, bringing the project back as it is now, saved or not.")
                     .clicked()
             {
                 app.apply_prefs(ui.ctx());
@@ -137,8 +148,8 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
         app.show_prefs = false;
     }
     if restart {
-        match std::env::current_exe().and_then(|exe| std::process::Command::new(exe).spawn()) {
-            Ok(_) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+        match crate::project::relaunch(app) {
+            Ok(()) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             Err(e) => app.status = format!("Could not restart: {e}"),
         }
     }

@@ -166,7 +166,13 @@ fn macros(app: &mut App, ui: &mut Ui, p: &mut DrumParams) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = ((ui.available_width() - 4.0 * (radius * 2.0 + 20.0)) / 3.0).max(2.0);
             for (k, name) in names.iter().enumerate().skip(row * 4).take(4) {
-                macro_knob(ui, p, k, name, app.drum.layer, radius);
+                let resp = macro_knob(ui, p, k, name, app.drum.layer, radius);
+                // Only the knobs' own values can be automated, not their velocity or
+                // randomness reach.
+                if app.drum.layer == MacroLayer::Value {
+                    let target = crate::engine::AutoTarget::DrumMacro { pad: app.selected as u16, m: k as u8 };
+                    super::automation::hook(app, ui, &resp, target, p.m[k]);
+                }
             }
         });
     }

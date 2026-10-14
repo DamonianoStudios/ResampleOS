@@ -1,6 +1,7 @@
-//! Project folders: `project.json` plus one WAV per pad holding its active take.
+//! Project folders: `project.json`, and under `samples/` one WAV per take of every pad
+//! (the active take as `A01.wav`, the others as `A01_take2.wav` and so on).
 
-use crate::app::{App, ConformMode, MAX_CHAIN, MAX_SCENES, Scene};
+use crate::app::{App, Arrangement, ConformMode, MAX_CHAIN, MAX_SCENES, Scene};
 use crate::engine::{BusCfg, Cmd, PadCfg, Pattern};
 use crate::model::PadModel;
 use crate::music::{Key, pad_label};
@@ -21,6 +22,14 @@ struct PluginFile {
     name: String,
     /// File under `plugins/` holding the plugin's own state blob.
     state: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct AnalyzerFile {
+    slot: usize,
+    /// The bus it listens to.
+    source: usize,
+    plugin: PluginFile,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -56,6 +65,19 @@ struct PadFile {
     #[serde(default)]
     vocal: Option<StackFile>,
     /// The drum synth patch that made `sample`, if it made it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    drum_patch: Option<crate::drum::DrumParams>,
+    /// Every take of a pad with more than one, oldest first; `sample` is the one at
+    /// `take`. Older projects have only `sample`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    takes: Vec<TakeFile>,
+    #[serde(default)]
+    take: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TakeFile {
+    file: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     drum_patch: Option<crate::drum::DrumParams>,
 }
@@ -188,6 +210,8 @@ struct ProjectFile {
     pads: Vec<PadFile>,
     #[serde(default)]
     fx_plugins: Vec<FxPluginFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    analyzers: Vec<AnalyzerFile>,
     /// Loops. The `pattern` stored with each pad above is the one for loop `scene`.
     /// Projects from before loops existed have neither field and open as a single loop.
     #[serde(default)]
@@ -200,6 +224,9 @@ struct ProjectFile {
     chain_on: bool,
     #[serde(default)]
     vocal_fx: crate::engine::VocalFx,
+    /// The song timeline; older projects have none.
+    #[serde(default, skip_serializing_if = "Arrangement::is_empty")]
+    arrangement: Arrangement,
 }
 
 pub fn save(app: &App, dir: &Path) -> Result<usize, String> {
@@ -210,14 +237,38 @@ pub fn save(app: &App, dir: &Path) -> Result<usize, String> {
         if p.is_empty() && p.cfg == PadCfg::default() && p.pattern.notes.is_empty() {
             continue;
         }
+        let label = pad_label(index);
         let sample = match p.sample() {
             Some(s) => {
-                let file = format!("{}.wav", pad_label(index));
+                let file = format!("{label}.wav");
                 sample::save_wav(&samples.join(&file), s, app.shared.sample_rate)?;
                 Some(file)
             }
             None => None,
         };
+        // Takes from an earlier save that this one no longer has.
+        if let Ok(entries) = std::fs::read_dir(&samples) {
+            let prefix = format!("{label}_take");
+            for e in entries.flatten() {
+                if e.file_name().to_string_lossy().starts_with(&prefix) {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+        }
+        let mut takes = Vec::new();
+        if p.takes.len() > 1 {
+            for (k, take) in p.takes.iter().enumerate() {
+                let file = if k == p.take_idx {
+                    format!("{label}.wav")
+                } else {
+                    let file = format!("{label}_take{}.wav", k + 1);
+                    sample::save_wav(&samples.join(&file), take, app.shared.sample_rate)?;
+                    file
+                };
+                let drum_patch = p.drum_patches.iter().find(|(s, _)| Arc::ptr_eq(s, take)).map(|(_, d)| *d);
+                takes.push(TakeFile { file, drum_patch });
+            }
+        }
         pads.push(PadFile {
             index,
             name: p.name.clone(),
@@ -231,6 +282,8 @@ pub fn save(app: &App, dir: &Path) -> Result<usize, String> {
                 _ => None,
             },
             drum_patch: app.take_patch(index),
+            take: p.take_idx,
+            takes,
         });
     }
     let count = pads.len();
@@ -249,6 +302,7 @@ pub fn save(app: &App, dir: &Path) -> Result<usize, String> {
         chain: app.chain.clone(),
         chain_on: app.chain_on,
         vocal_fx: app.vocal_fx,
+        arrangement: app.arrangement.clone(),
         pads,
         fx_plugins: app
             .fx_plugins
@@ -257,6 +311,14 @@ pub fn save(app: &App, dir: &Path) -> Result<usize, String> {
             .filter_map(|(i, s)| {
                 let s = s.as_ref()?;
                 Some(FxPluginFile { bus: i / 3, slot: i % 3, plugin: save_plugin(dir, &format!("bus{}_{}", i / 3 + 1, i % 3 + 1), s) })
+            })
+            .collect(),
+        analyzers: app
+            .analyzers
+            .iter()
+            .enumerate()
+            .filter_map(|(k, (slot, source))| {
+                Some(AnalyzerFile { slot: k, source: *source, plugin: save_plugin(dir, &format!("analyzer{}", k + 1), slot.as_ref()?) })
             })
             .collect(),
     };
@@ -280,7 +342,17 @@ pub fn load(app: &mut App, dir: &Path) -> Result<usize, String> {
         let p = &mut pads[pf.index];
         p.name = pf.name.clone();
         p.pattern = pf.pattern.clone();
-        if let Some(name) = &pf.sample {
+        if !pf.takes.is_empty() {
+            for t in &pf.takes {
+                let s = Arc::new(sample::load_file(&dir.join("samples").join(&t.file), rate)?);
+                if let Some(patch) = t.drum_patch {
+                    p.drum_patches.push((s.clone(), patch));
+                }
+                p.takes.push(s);
+            }
+            p.take_idx = pf.take.min(p.takes.len() - 1);
+            p.refresh_mini();
+        } else if let Some(name) = &pf.sample {
             let s = sample::load_file(&dir.join("samples").join(name), rate)?;
             p.push_take(Arc::new(s));
         }
@@ -293,11 +365,48 @@ pub fn load(app: &mut App, dir: &Path) -> Result<usize, String> {
             });
         }
         p.transients = pf.transients.clone();
-        if let (Some(patch), Some(take)) = (pf.drum_patch, p.sample().cloned()) {
+        if let (Some(patch), Some(take), true) = (pf.drum_patch, p.sample().cloned(), pf.takes.is_empty()) {
             p.drum_patches.push((take, patch));
         }
     }
 
+    install(app, &file, pads, Some(dir))
+}
+
+/// Starts an empty project, as the app does when it opens: four banks of empty pads, one
+/// two-bar loop, the default buses. Plugins are unloaded and undo starts afresh.
+pub fn new_project(app: &mut App) {
+    let file = ProjectFile {
+        version: FILE_VERSION,
+        bpm: 88.0,
+        swing: 0.5,
+        key: Key { root: 0, scale: crate::music::Scale::Minor },
+        banks: 4,
+        buses: App::starting_buses().to_vec(),
+        conform_mode: ConformMode::Strict,
+        auto_conform: false,
+        preserve_transients: true,
+        pads: Vec::new(),
+        fx_plugins: Vec::new(),
+        analyzers: Vec::new(),
+        scenes: vec![Scene::new(2)],
+        scene: 0,
+        chain: Vec::new(),
+        chain_on: false,
+        vocal_fx: Default::default(),
+        arrangement: Arrangement::default(),
+    };
+    let pads = (0..file.banks * 16).map(|_| PadModel::default()).collect();
+    let _ = install(app, &file, pads, None);
+    app.project_dir = None;
+    app.tab = crate::app::Tab::Wave;
+    app.status = "New project".into();
+}
+
+/// Makes a decoded project the one open: replaces the pads, loops and buses, brings the
+/// engine in line and loads the plugins (their states from `dir`).
+fn install(app: &mut App, file: &ProjectFile, pads: Vec<PadModel>, dir: Option<&Path>) -> Result<usize, String> {
+    let banks = pads.len() / 16;
     app.send(Cmd::Play(false));
     app.send(Cmd::Panic);
     for i in 0..app.pads.len() {
@@ -338,6 +447,11 @@ pub fn load(app: &mut App, dir: &Path) -> Result<usize, String> {
     app.scene = file.scene.min(app.scenes.len() - 1);
     app.chain = file.chain.iter().copied().filter(|s| *s < app.scenes.len()).take(MAX_CHAIN).collect();
     app.chain_on = file.chain_on && !app.chain.is_empty();
+    app.arrangement = file.arrangement.clone();
+    app.arrangement.loop_count_changed(app.scenes.len());
+    app.arr = crate::app::ArrangeUi::default();
+    // A project with a song opens on it.
+    app.view = if app.arrangement.is_empty() { crate::app::View::Pads } else { crate::app::View::Arrange };
     app.shared.scene_index.store(app.scene as u32, std::sync::atomic::Ordering::Relaxed);
     // Unload the outgoing project's effect plugins before its bus settings are replaced.
     for b in 0..NUM_BUSES {
@@ -345,13 +459,17 @@ pub fn load(app: &mut App, dir: &Path) -> Result<usize, String> {
             app.remove_plugin(PluginTarget::Fx(b, s));
         }
     }
+    for k in 0..app.analyzers.len() {
+        app.remove_plugin(PluginTarget::Analyzer(k));
+        app.analyzers[k].1 = crate::shared::MASTER;
+    }
     // The saved render of a vocal pad may predate its last edit; rebuild it from the takes.
     for i in 0..app.pads.len() {
         if app.pads[i].vocal.as_ref().is_some_and(|v| !v.is_empty()) {
             app.vocal_refresh(i);
         }
     }
-    app.buses = buses_of(&file);
+    app.buses = buses_of(file);
     app.vocal_fx = file.vocal_fx;
     app.vocal_disarm();
     app.vocal.selected = None;
@@ -359,7 +477,7 @@ pub fn load(app: &mut App, dir: &Path) -> Result<usize, String> {
     app.push_scene_len();
 
     // Plugins last: instantiating them is the slow, fallible part.
-    let read_state = |pf: &PluginFile| pf.state.as_ref().and_then(|f| std::fs::read(dir.join("plugins").join(f)).ok());
+    let read_state = |pf: &PluginFile| pf.state.as_ref().and_then(|f| std::fs::read(dir?.join("plugins").join(f)).ok());
     let mut missing = Vec::new();
     for pf in &file.pads {
         if let Some(pl) = &pf.plugin {
@@ -381,12 +499,35 @@ pub fn load(app: &mut App, dir: &Path) -> Result<usize, String> {
             app.push_bus(bus);
         }
     }
+    for a in file.analyzers.iter().filter(|a| a.slot < crate::shared::NUM_ANALYZERS) {
+        app.analyzers[a.slot].1 = a.source.min(crate::shared::MASTER);
+        if !app.load_plugin(&a.plugin.path, a.plugin.class_id.as_deref(), PluginTarget::Analyzer(a.slot), read_state(&a.plugin).as_deref()) {
+            missing.push(a.plugin.name.clone());
+        }
+    }
     // A different project is a fresh start for undo.
     app.reset_history();
     if !missing.is_empty() {
         return Err(format!("project opened, but these plugins could not be loaded: {}", missing.join(", ")));
     }
     Ok(file.pads.len())
+}
+
+/// Flag before the folder a project carried across a restart came from (empty if none).
+pub const WAS_FLAG: &str = "--was";
+
+/// Restarts the app with the project as it is now: it is saved to a session folder in
+/// the settings folder, and the new instance opens it and takes up the original folder
+/// (and the unsaved state) from there.
+pub fn relaunch(app: &App) -> Result<(), String> {
+    let session = crate::prefs::config_dir().ok_or("no settings folder available")?.join("restart-session");
+    let _ = std::fs::remove_dir_all(&session);
+    std::fs::create_dir_all(&session).map_err(|e| e.to_string())?;
+    save(app, &session)?;
+    let was = app.project_dir.as_ref().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default();
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    std::process::Command::new(exe).arg(&session).arg(WAS_FLAG).arg(was).spawn().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 pub fn save_dialog(app: &mut App) {
@@ -396,7 +537,10 @@ pub fn save_dialog(app: &mut App) {
     };
     let Some(dir) = dir else { return };
     app.status = match save(app, &dir) {
-        Ok(n) => format!("Saved {n} pads to {}", dir.display()),
+        Ok(n) => {
+            app.mark_saved();
+            format!("Saved {n} pads to {}", dir.display())
+        }
         Err(e) => format!("Save failed: {e}"),
     };
     app.project_dir = Some(dir);
@@ -450,6 +594,59 @@ mod tests {
         send(Cmd::SetBpm(file.bpm));
         send(Cmd::SetSwing(file.swing));
         send(Cmd::SetScale(file.key.mask()));
+        if !file.arrangement.is_empty() {
+            // Song mode: the arrangement, start to end, as export renders it.
+            use crate::engine::{ArrangementPlan, SongClip, SongCmd, SongSection, SongTrack};
+            let bar = crate::music::TICKS_PER_BAR as u64;
+            let tracks = file
+                .arrangement
+                .tracks
+                .iter()
+                .map(|(pad, clips)| SongTrack {
+                    pad: *pad as u16,
+                    clips: clips.iter().map(|c| SongClip { start: c.start, len: c.len, offset: c.offset, pattern: Arc::new(file.scenes[c.scene].pattern(*pad)) }).collect(),
+                })
+                .collect();
+            let sections = file
+                .arrangement
+                .sections
+                .iter()
+                .map(|s| SongSection {
+                    start: s.start,
+                    len: s.len,
+                    loop_len: file.scenes[s.scene].bars as u64 * bar,
+                    automation: (!file.scenes[s.scene].automation.is_empty()).then(|| Arc::new(file.scenes[s.scene].automation.clone())),
+                })
+                .collect();
+            send(Cmd::Song(SongCmd::Plan(Some(Arc::new(ArrangementPlan { tracks, sections })))));
+            send(Cmd::Song(SongCmd::Mode(true)));
+            send(Cmd::Play(true));
+            let end = file.arrangement.end();
+            let frames = (end as f64 / bar as f64 * 4.0 * 60.0 / file.bpm as f64 * sr as f64).round() as usize;
+            let mut out = vec![0f32; frames * 2];
+            for chunk in out.chunks_mut(512 * 2) {
+                e.process(chunk, 2);
+                while grx.pop().is_ok() {}
+            }
+            // Level per section, to compare with the loop-by-loop render.
+            let mut at = 0usize;
+            for s in &file.arrangement.sections {
+                let n = (s.len as f64 / bar as f64 * 4.0 * 60.0 / file.bpm as f64 * sr as f64).round() as usize * 2;
+                let part = &out[at.min(out.len())..(at + n).min(out.len())];
+                let peak = part.iter().fold(0f32, |m, v| m.max(v.abs()));
+                let rms = (part.iter().map(|v| v * v).sum::<f32>() / part.len().max(1) as f32).sqrt();
+                println!("song bars {:>2}-{:>2} {:12} peak {:6.1} dB  rms {:6.1} dB", s.start / bar + 1, s.end() / bar, file.scenes[s.scene].name, 20.0 * peak.max(1e-6).log10(), 20.0 * rms.max(1e-6).log10());
+                at += n;
+            }
+            let peak = out.iter().fold(0f32, |m, v| m.max(v.abs()));
+            println!("song: {:.1} s, peak {:.1} dB", out.len() as f32 / 2.0 / sr as f32, 20.0 * peak.max(1e-6).log10());
+            if let Ok(path) = std::env::var("RENDER_OUT") {
+                let l: Vec<f32> = out.iter().step_by(2).copied().collect();
+                let r: Vec<f32> = out.iter().skip(1).step_by(2).copied().collect();
+                sample::save_wav(Path::new(&path), &sample::SampleData::new(l, r), sr).unwrap();
+            }
+            return;
+        }
         let order: Vec<usize> = if file.chain.is_empty() { vec![file.scene] } else { file.chain.clone() };
         let scenes = &file.scenes;
         let lanes = |s: usize| (!scenes[s].automation.is_empty()).then(|| Arc::new(scenes[s].automation.clone()));

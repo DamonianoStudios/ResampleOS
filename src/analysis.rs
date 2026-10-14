@@ -276,82 +276,179 @@ pub fn detect_key(pcp: &[f32; 12]) -> (u8, bool, f32) {
     (root, minor, (0.5 * best.max(0.0) + 0.5 * margin).clamp(0.0, 1.0))
 }
 
-/// YIN on one frame. Returns (hz, aperiodicity) for the best period candidate.
-fn yin_frame(x: &[f32], sr: f32) -> Option<(f32, f32)> {
-    let tau_max = ((sr / 40.0) as usize).min(x.len() / 2);
-    let tau_min = (sr / 2000.0) as usize;
+/// Lowest and highest fundamentals looked for, in Hz: a low E on a five-string bass to
+/// the top of a soprano and most leads.
+const PITCH_LO: f32 = 30.0;
+const PITCH_HI: f32 = 2000.0;
+
+/// YIN's cumulative mean normalised difference for one frame, for every lag up to
+/// `tau_max`. The difference function is computed exactly, through an FFT
+/// autocorrelation, rather than on every other sample.
+fn cmnd(x: &[f32], tau_max: usize, fft: &dyn rustfft::Fft<f32>, ifft: &dyn rustfft::Fft<f32>) -> Vec<f32> {
     let w = x.len() - tau_max;
-    if tau_max <= tau_min + 2 || w < 64 {
-        return None;
+    let size = fft.len();
+    // r(tau) = sum over j < w of x[j] * x[j + tau], from the cross-spectrum of the first
+    // w samples and the whole frame.
+    let mut a: Vec<Complex<f32>> = (0..size).map(|i| Complex::new(if i < w { x[i] } else { 0.0 }, 0.0)).collect();
+    let mut b: Vec<Complex<f32>> = (0..size).map(|i| Complex::new(*x.get(i).unwrap_or(&0.0), 0.0)).collect();
+    fft.process(&mut a);
+    fft.process(&mut b);
+    for (p, q) in a.iter_mut().zip(&b) {
+        *p = p.conj() * q;
     }
-    let mut d = vec![0f32; tau_max];
+    ifft.process(&mut a);
+    let r: Vec<f32> = a.iter().map(|c| c.re / size as f32).collect();
+    // Energy of the window at each lag, by a running sum of squares.
+    let sq: Vec<f64> = std::iter::once(0.0)
+        .chain(x.iter().scan(0.0f64, |acc, v| {
+            *acc += (*v as f64) * (*v as f64);
+            Some(*acc)
+        }))
+        .collect();
+    let e0 = sq[w];
+    let mut out = vec![1f32; tau_max];
+    let mut run = 0.0f64;
     for tau in 1..tau_max {
-        let mut acc = 0.0;
-        let mut j = 0;
-        while j < w {
-            let diff = x[j] - x[j + tau];
-            acc += diff * diff;
-            j += 2;
-        }
-        d[tau] = acc;
+        let et = sq[tau + w] - sq[tau];
+        let d = (e0 + et - 2.0 * r[tau] as f64).max(0.0);
+        run += d;
+        out[tau] = if run > 0.0 { (d * tau as f64 / run) as f32 } else { 1.0 };
     }
-    // Cumulative mean normalised difference.
-    let mut run = 0.0;
-    let mut cmnd = vec![1f32; tau_max];
-    for tau in 1..tau_max {
-        run += d[tau];
-        cmnd[tau] = if run > 0.0 { d[tau] * tau as f32 / run } else { 1.0 };
-    }
-    let mut tau = tau_min.max(2);
-    let mut found = None;
-    while tau + 1 < tau_max {
-        if cmnd[tau] < 0.15 {
-            while tau + 1 < tau_max && cmnd[tau + 1] < cmnd[tau] {
-                tau += 1;
-            }
-            found = Some(tau);
-            break;
-        }
-        tau += 1;
-    }
-    let tau = found?;
-    let (a, b, c) = (cmnd[tau - 1], cmnd[tau], cmnd[(tau + 1).min(tau_max - 1)]);
-    let denom = a - 2.0 * b + c;
-    let shift = if denom.abs() > 1e-9 { 0.5 * (a - c) / denom } else { 0.0 };
-    Some((sr / (tau as f32 + shift), b))
+    out
 }
 
-/// Median YIN pitch over the sounding part of the buffer, as a fractional MIDI note.
-/// `None` unless most frames are clearly periodic (chords, drums, noise).
+/// Refines a dip of `c` at `tau` to a fractional lag.
+fn refine(c: &[f32], tau: usize) -> f32 {
+    if tau == 0 || tau + 1 >= c.len() {
+        return tau as f32;
+    }
+    let (a, b, d) = (c[tau - 1], c[tau], c[tau + 1]);
+    let denom = a - 2.0 * b + d;
+    tau as f32 + if denom.abs() > 1e-9 { (0.5 * (a - d) / denom).clamp(-1.0, 1.0) } else { 0.0 }
+}
+
+/// The bottom of the dip of `c` nearest `tau`, searching a few lags either side.
+fn dip_near(c: &[f32], tau: usize) -> usize {
+    let reach = (tau / 20).max(2);
+    let lo = tau.saturating_sub(reach).max(1);
+    let hi = (tau + reach).min(c.len() - 1);
+    (lo..=hi).min_by(|a, b| c[*a].total_cmp(&c[*b])).unwrap_or(tau)
+}
+
+/// One frame's pitch: (hz, aperiodicity 0..1, low is clearly pitched).
+///
+/// YIN's rule (the first dip below a threshold) with two guards against octave errors.
+/// When nothing clears the threshold (a noisy or breathy note), the first dip nearly as
+/// deep as the deepest is taken, since noise makes the dips at every multiple of the
+/// period about equal. And a dip found first is checked against
+/// the one at twice its lag: a missing fundamental makes the octave above look periodic
+/// too, but its true period is deeper still.
+fn yin_frame(x: &[f32], sr: f32, fft: &dyn rustfft::Fft<f32>, ifft: &dyn rustfft::Fft<f32>) -> Option<(f32, f32)> {
+    let tau_max = ((sr / PITCH_LO) as usize).min(x.len() / 2);
+    let tau_min = ((sr / PITCH_HI) as usize).max(2);
+    if tau_max <= tau_min + 2 || x.len() - tau_max < 64 {
+        return None;
+    }
+    let c = cmnd(x, tau_max, fft, ifft);
+    let local_min = |t: usize| t > tau_min && t + 1 < tau_max && c[t] <= c[t - 1] && c[t] <= c[t + 1];
+    const THRESHOLD: f32 = 0.12;
+    let mut tau = None;
+    let mut t = tau_min;
+    while t + 1 < tau_max {
+        if c[t] < THRESHOLD {
+            while t + 1 < tau_max && c[t + 1] < c[t] {
+                t += 1;
+            }
+            tau = Some(t);
+            break;
+        }
+        t += 1;
+    }
+    let tau = match tau {
+        Some(t) => {
+            // The octave below: the true period if its dip is clearly the deeper one.
+            let double = 2 * t;
+            if double + 1 < tau_max {
+                let d = dip_near(&c, double);
+                if local_min(d) && c[t] > 0.04 && c[d] < c[t] * 0.5 { d } else { t }
+            } else {
+                t
+            }
+        }
+        None => {
+            let deepest = (tau_min..tau_max - 1).filter(|t| local_min(*t)).min_by(|a, b| c[*a].total_cmp(&c[*b]))?;
+            if c[deepest] > 0.45 {
+                return None;
+            }
+            // Noise makes the dips at every multiple of the period about equally deep, so
+            // take the shortest period whose dip is nearly as deep as the deepest.
+            let near = c[deepest] * 1.25 + 0.04;
+            (tau_min..tau_max - 1).find(|t| local_min(*t) && c[*t] <= near).unwrap_or(deepest)
+        }
+    };
+    Some((sr / refine(&c, tau), c[tau]))
+}
+
+/// The pitch of a monophonic source, as a fractional MIDI note: the note it sits on for
+/// longest, weighted by how loud and how clearly pitched each moment is. `None` for
+/// chords, drums and noise, which have no single pitch.
 pub fn detect_pitch(mono: &[f32], sr: f32) -> Option<f32> {
-    const N: usize = 4096;
-    if mono.len() < N {
+    // Two of the longest periods looked for, and then some.
+    let n = ((2.5 * sr / PITCH_LO) as usize).next_power_of_two().max(2048);
+    if mono.len() < n {
         return None;
     }
     let peak = mono.iter().fold(0f32, |m, v| m.max(v.abs()));
     if peak < 1e-4 {
         return None;
     }
-    let hops = ((mono.len() - N) / 12).max(N / 2);
-    let mut notes = Vec::new();
-    let mut voiced_frames = 0;
+    let mut planner = FftPlanner::<f32>::new();
+    let size = (2 * n).next_power_of_two();
+    let (fft, ifft) = (planner.plan_fft_forward(size), planner.plan_fft_inverse(size));
+    // Up to 120 frames spread over the whole sample, overlapping where it is short.
+    let hop = ((mono.len() - n) / 120).max(n / 4);
+    let mut frames = Vec::new();
+    let mut sounding = 0.0f32;
     let mut at = 0;
-    while at + N <= mono.len() && voiced_frames < 24 {
-        let frame = &mono[at..at + N];
-        let rms = (frame.iter().map(|v| v * v).sum::<f32>() / N as f32).sqrt();
-        if rms > peak * 0.05 {
-            voiced_frames += 1;
-            if let Some((hz, _)) = yin_frame(frame, sr) {
-                notes.push(hz_to_midi(hz));
+    while at + n <= mono.len() {
+        let frame = &mono[at..at + n];
+        let rms = (frame.iter().map(|v| v * v).sum::<f32>() / n as f32).sqrt();
+        if rms > peak * 0.03 {
+            sounding += rms;
+            // Breath or noise under a note raises its aperiodicity without hiding it.
+            if let Some((hz, ap)) = yin_frame(frame, sr, fft.as_ref(), ifft.as_ref())
+                && ap < 0.35
+            {
+                frames.push((hz_to_midi(hz), rms * (1.0 - ap)));
             }
         }
-        at += hops;
+        at += hop;
     }
-    if notes.is_empty() || notes.len() * 10 < voiced_frames * 8 {
+    let voiced: f32 = frames.iter().map(|f| f.1).sum();
+    if frames.is_empty() || voiced < sounding * 0.35 {
         return None;
     }
-    notes.sort_by(|a, b| a.total_cmp(b));
-    Some(notes[notes.len() / 2])
+    // A histogram in tenths of a semitone, smoothed over a semitone, finds the note it
+    // dwells on; vibrato and slides around it don't move it.
+    const BINS: usize = 1280;
+    let mut hist = vec![0f32; BINS];
+    for &(note, w) in &frames {
+        let b = (note * 10.0).round();
+        if (0.0..BINS as f32).contains(&b) {
+            hist[b as usize] += w;
+        }
+    }
+    let smooth: Vec<f32> = (0..BINS)
+        .map(|i| (i.saturating_sub(5)..(i + 6).min(BINS)).map(|j| hist[j] * (6.0 - (j as f32 - i as f32).abs())).sum())
+        .collect();
+    let top = (0..BINS).max_by(|a, b| smooth[*a].total_cmp(&smooth[*b]))? as f32 / 10.0;
+    // The weighted mean of the moments within half a semitone of it.
+    let (sum, weight) = frames.iter().filter(|f| (f.0 - top).abs() <= 0.5).fold((0.0, 0.0), |(s, w), f| (s + f.0 * f.1, w + f.1));
+    // A note it barely visits is no answer: that is a melody or a chord, not a pitch.
+    if weight < voiced * 0.25 {
+        return None;
+    }
+    Some(sum / weight)
 }
 
 pub fn analyze(s: &SampleData, sr: f32) -> Analysis {
@@ -425,6 +522,98 @@ mod tests {
 
         let a: Vec<f32> = (0..SR as usize).map(|i| (2.0 * PI * 220.0 * i as f32 / SR).sin() * 0.5).collect();
         let p = detect_pitch(&a, SR).unwrap();
-        assert!((p - 57.0).abs() < 0.1, "pitch {p}");
+        assert!((p - 57.0).abs() < 0.05, "pitch {p}");
+    }
+
+    /// A note built from harmonics, with `fund` the level of the fundamental itself.
+    fn note(hz: f32, secs: f32, fund: f32, harmonics: usize) -> Vec<f32> {
+        (0..(SR * secs) as usize)
+            .map(|i| {
+                let t = i as f32 / SR;
+                let mut v = fund * (2.0 * PI * hz * t).sin();
+                for h in 2..=harmonics {
+                    v += (2.0 * PI * hz * h as f32 * t).sin() / h as f32;
+                }
+                v * 0.3
+            })
+            .collect()
+    }
+
+    #[test]
+    fn pitch_survives_a_missing_fundamental_and_low_notes() {
+        // A bass note whose fundamental is almost gone: the ear still hears 55 Hz.
+        let p = detect_pitch(&note(55.0, 1.0, 0.05, 8), SR).unwrap();
+        assert!((p - 33.0).abs() < 0.1, "A1 with a weak fundamental read as {p}");
+        // A low E on a bass guitar.
+        let p = detect_pitch(&note(41.2, 1.5, 1.0, 6), SR).unwrap();
+        assert!((p - 28.0).abs() < 0.1, "E1 read as {p}");
+        // A high lead note.
+        let p = detect_pitch(&note(1046.5, 0.5, 1.0, 4), SR).unwrap();
+        assert!((p - 84.0).abs() < 0.1, "C6 read as {p}");
+    }
+
+    #[test]
+    fn pitch_holds_through_vibrato_and_a_little_noise() {
+        let mut seed = 7u32;
+        let v: Vec<f32> = (0..SR as usize * 2)
+            .map(|i| {
+                let t = i as f32 / SR;
+                // A 5.5 Hz vibrato of a third of a semitone around G3.
+                let hz = 196.0 * 2f32.powf(0.33 / 12.0 * (2.0 * PI * 5.5 * t).sin());
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                let noise = (seed as f32 / u32::MAX as f32 - 0.5) * 0.05;
+                (2.0 * PI * 196.0 * t + (hz - 196.0) / 5.5 * -(2.0 * PI * 5.5 * t).cos()).sin() * 0.4 + noise
+            })
+            .collect();
+        let p = detect_pitch(&v, SR).unwrap();
+        assert!((p - 55.0).abs() < 0.15, "G3 with vibrato read as {p}");
+    }
+
+    #[test]
+    fn a_melody_reads_as_the_note_it_dwells_on() {
+        let mut v = Vec::new();
+        for (midi, secs) in [(60.0, 0.6), (62.0, 0.2), (64.0, 0.2), (60.0, 0.6), (67.0, 0.2)] {
+            v.extend(note(crate::music::midi_to_hz(midi), secs, 1.0, 5));
+        }
+        let p = detect_pitch(&v, SR).unwrap();
+        assert!((p - 60.0).abs() < 0.15, "melody read as {p}");
+    }
+
+    #[test]
+    fn a_breathy_note_still_has_a_pitch() {
+        let mut seed = 11u32;
+        let v: Vec<f32> = note(440.0, 1.0, 1.0, 3)
+            .into_iter()
+            .map(|x| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                x + (seed as f32 / u32::MAX as f32 - 0.5) * 0.4
+            })
+            .collect();
+        let p = detect_pitch(&v, SR).expect("a note under breath noise");
+        assert!((p - 69.0).abs() < 0.1, "A4 read as {p}");
+    }
+
+    #[test]
+    fn chords_and_noise_have_no_pitch() {
+        let chord: Vec<f32> = note(261.6, 1.0, 1.0, 4).iter().zip(note(329.6, 1.0, 1.0, 4)).zip(note(392.0, 1.0, 1.0, 4)).map(|((a, b), c)| a + b + c).collect();
+        // A major triad's notes share a common period (a C two octaves down), so a reading
+        // there is not wrong as such; what must not happen is calling it one of its notes.
+        if let Some(p) = detect_pitch(&chord, SR) {
+            assert!((p - 60.0).abs() > 1.0 && (p - 64.0).abs() > 1.0 && (p - 67.0).abs() > 1.0, "chord read as {p}");
+        }
+        let mut seed = 3u32;
+        let noise: Vec<f32> = (0..SR as usize)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                seed as f32 / u32::MAX as f32 - 0.5
+            })
+            .collect();
+        assert_eq!(detect_pitch(&noise, SR), None);
     }
 }

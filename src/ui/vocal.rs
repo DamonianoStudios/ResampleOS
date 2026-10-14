@@ -123,6 +123,17 @@ fn toolbar(app: &mut App, ui: &mut Ui) {
         if changed.drag_stopped() || changed.lost_focus() {
             let _ = app.prefs.save();
         }
+        let measuring = app.latency_probe.is_some();
+        if ui
+            .add_enabled(!measuring, egui::Button::new(if measuring { "Measuring…" } else { "Measure" }))
+            .on_hover_text(
+                "Measures the input latency for you. Connect an output of your interface to the input you record from \
+                 (or hold the mic near a speaker), then click: a few short chirps play and the time they take to come back is set above.",
+            )
+            .clicked()
+        {
+            app.measure_latency();
+        }
     });
     ui.horizontal(|ui| {
         // ---- Tools.

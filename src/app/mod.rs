@@ -1,8 +1,10 @@
 //! Application state and every action the UI, keyboard and controllers can perform.
+mod arrange;
 mod automation;
 mod capture;
 mod conform;
 mod drum;
+mod export;
 mod history;
 mod input;
 mod pads;
@@ -13,6 +15,8 @@ mod scenes;
 mod state;
 mod vocal;
 
+pub use arrange::{ARR_SNAPS, ArrDrag, ArrangeUi, Arrangement, Clip, View};
+pub use export::Depth;
 pub use automation::{AUTO_SNAPS, AutoUi};
 pub use drum::{DrumUi, MacroLayer};
 pub use history::History;
@@ -47,7 +51,7 @@ pub struct App {
     tx: Producer<Cmd>,
     garbage: Consumer<Garbage>,
     _stream: Option<cpal::Stream>,
-    _midi: midi::Midi,
+    pub(crate) _midi: midi::Midi,
     midi_rx: Receiver<MidiEvent>,
     pub midi_ports: Vec<String>,
     pub device_name: String,
@@ -72,6 +76,9 @@ pub struct App {
     editors: Vec<plugins::EditorWin>,
     /// Bus effect plugins, indexed `bus * 3 + slot`.
     pub fx_plugins: Vec<Option<PluginSlot>>,
+    /// Analyzer plugins and the bus each watches.
+    pub analyzers: Vec<(Option<PluginSlot>, usize)>,
+    pub show_analyzers: bool,
     synced_transport: (f32, bool),
     jobs_tx: Sender<JobResult>,
     jobs_rx: Receiver<JobResult>,
@@ -93,6 +100,8 @@ pub struct App {
     pub scene: usize,
     /// Loops to play one after another, by index into `scenes`.
     pub chain: Vec<usize>,
+    /// The song timeline.
+    pub arrangement: Arrangement,
     pub chain_on: bool,
     /// The vocal bus's gate, de-esser and ducking.
     pub vocal_fx: crate::engine::VocalFx,
@@ -122,6 +131,10 @@ pub struct App {
     pub wave_anchor: Option<usize>,
     pub warp_semis: f32,
     pub warp_stretch: f32,
+    /// How warps and conforms are done.
+    pub warp_mode: stretch::WarpMode,
+    /// Keep formants when an Elastic warp shifts pitch.
+    pub warp_formants: bool,
     pub status: String,
     pub clipboard: Option<usize>,
     /// Pad rectangles from the last frame, for drops and drags that end on a pad.
@@ -142,6 +155,14 @@ pub struct App {
     pub choke_paint: Option<bool>,
 
     pub vocal: VocalUi,
+    /// Which of the two main views is on screen.
+    pub view: View,
+    pub arr: ArrangeUi,
+    /// The engine is playing the arrangement rather than a loop.
+    pub song_mode: bool,
+    /// A song export is running; the live engine has lent it the plugins.
+    pub exporting: bool,
+    pub export_depth: export::Depth,
     pub drum: DrumUi,
     pub auto: AutoUi,
     vocal_work: vocal::VocalWork,
@@ -157,6 +178,11 @@ pub struct App {
     /// Launch on the next bar line rather than at the end of the playing loop.
     pub launch_on_bar: bool,
     seen_starts: u32,
+    /// File > New was asked for while the project has unsaved changes.
+    pub confirm_new: bool,
+    /// A latency measurement under way: when it started, and the input monitoring to put
+    /// back after it.
+    pub latency_probe: Option<(std::time::Instant, u8)>,
 }
 
 impl App {
@@ -164,7 +190,7 @@ impl App {
         let audio = audio_io::start(&prefs);
         let audio_note = audio.note.clone();
         let (mtx, midi_rx) = channel();
-        let midi = midi::start(audio.shared.clone(), audio.tx_midi, mtx);
+        let midi = midi::start(audio.shared.clone(), audio.tx_midi, mtx, prefs.pad_lights);
         let midi_ports = midi.port_names.clone();
         let (jobs_tx, jobs_rx) = channel();
         let banks = 4;
@@ -193,6 +219,8 @@ impl App {
             browser: Browser { open: false, query: String::new(), filter: 0, target: PluginTarget::Pad(0) },
             editors: Vec::new(),
             fx_plugins: (0..NUM_BUSES * 3).map(|_| None).collect(),
+            analyzers: (0..crate::shared::NUM_ANALYZERS).map(|_| (None, MASTER)).collect(),
+            show_analyzers: false,
             synced_transport: (0.0, false),
             jobs_tx,
             jobs_rx,
@@ -202,11 +230,7 @@ impl App {
             bpm: 88.0,
             swing: 0.5,
             key: Key { root: 0, scale: Scale::Minor },
-            buses: {
-                let mut buses = [BusCfg::default(); NUM_BUSES];
-                buses[VOCAL] = BusCfg::vocal();
-                buses
-            },
+            buses: App::starting_buses(),
             conform_mode: ConformMode::Strict,
             auto_conform: false,
             preserve_transients: true,
@@ -214,6 +238,7 @@ impl App {
             scenes: vec![Scene::new(2)],
             scene: 0,
             chain: Vec::new(),
+            arrangement: Arrangement::default(),
             chain_on: false,
             vocal_fx: Default::default(),
             bank: 0,
@@ -231,7 +256,7 @@ impl App {
             resample: Resample::Idle,
             skip: SkipUi { window_secs: 30.0, sel: None, frozen_end: None, mark_in: None, dragging_out: false },
             harm: Harmonizer { open: false, bpm: 120.0, root: 0, minor: false, tempo: true, key: true },
-            roll: RollUi { snap: 3, scale_lock: true, ghosts: true, rec: false, top_f: 72.0, last_len: 120, drag: None, sel: Vec::new(), sel_pad: 0, marquee: None, zoom: 1.0, scroll: 0.0, follow: true },
+            roll: RollUi { snap: 3, scale_lock: true, ghosts: true, rec: false, top_f: 72.0, last_len: 120, drag: None, sel: Vec::new(), sel_pad: 0, marquee: None, zoom: 1.0, scroll: 0.0, follow: true, vel_drag: None, vel_random: 0.2 },
             show_choke: false,
             show_help: false,
             sensitivity: 0.5,
@@ -240,6 +265,8 @@ impl App {
             wave_anchor: None,
             warp_semis: 0.0,
             warp_stretch: 100.0,
+            warp_mode: stretch::WarpMode::Elastic,
+            warp_formants: false,
             status: String::new(),
             clipboard: None,
             pad_rects: Vec::new(),
@@ -254,6 +281,11 @@ impl App {
             step_paint: None,
             choke_paint: None,
             vocal: VocalUi::default(),
+            view: View::Pads,
+            arr: ArrangeUi::default(),
+            song_mode: false,
+            exporting: false,
+            export_depth: export::Depth::Int24,
             drum: DrumUi::default(),
             auto: AutoUi { snap: 3, ..AutoUi::default() },
             vocal_work: Default::default(),
@@ -264,24 +296,29 @@ impl App {
             chain_drag: None,
             launch_on_bar: false,
             seen_starts: 0,
+            confirm_new: false,
+            latency_probe: None,
         };
-        // The spec's default performance chain on Bus 1.
-        app.buses[0].slots = [
-            SlotCfg::new(FxKind::Vinyl, true),
-            SlotCfg::new(FxKind::Cassette, false),
-            SlotCfg::new(FxKind::Isolator, true),
-        ];
         app.push_all();
         // A project folder on the command line opens that project; audio files (also via
         // "Open with") fill pads from A01.
         let args: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
         let mut opened = None;
+        // A project carried across a restart names the folder it really belongs to.
+        let was = args.iter().position(|a| a.as_os_str() == crate::project::WAS_FLAG).map(|i| args.get(i + 1).cloned().unwrap_or_default());
         if let Some(dir) = args.first().filter(|p| p.join("project.json").is_file()) {
             opened = Some(match crate::project::load(&mut app, dir) {
-                Ok(n) => {
-                    app.project_dir = Some(dir.clone());
-                    format!("Opened {} ({n} pads)", dir.display())
-                }
+                Ok(n) => match was {
+                    Some(was) => {
+                        app.project_dir = (!was.as_os_str().is_empty()).then_some(was);
+                        app.history.forget_saved();
+                        format!("Restarted at {} Hz with your project as it was", app.shared.sample_rate)
+                    }
+                    None => {
+                        app.project_dir = Some(dir.clone());
+                        format!("Opened {} ({n} pads)", dir.display())
+                    }
+                },
                 Err(e) => format!("Open failed: {e}"),
             });
         } else {
@@ -298,6 +335,24 @@ impl App {
             None => format!("{} @ {} Hz", app.device_name, app.shared.sample_rate),
         };
         app
+    }
+
+    /// The buses of a new project: the vocal bus set up for a voice, and a performance
+    /// chain on Bus 1.
+    pub fn starting_buses() -> [BusCfg; NUM_BUSES] {
+        let mut buses = [BusCfg::default(); NUM_BUSES];
+        buses[VOCAL] = BusCfg::vocal();
+        buses[0].slots = [SlotCfg::new(FxKind::Vinyl, true), SlotCfg::new(FxKind::Cassette, false), SlotCfg::new(FxKind::Isolator, true)];
+        buses
+    }
+
+    /// File > New: starts an empty project, first asking if there are unsaved changes.
+    pub fn request_new(&mut self) {
+        if self.has_unsaved_changes() {
+            self.confirm_new = true;
+        } else {
+            crate::project::new_project(self);
+        }
     }
 
     pub fn sr(&self) -> f32 {
@@ -327,6 +382,7 @@ impl App {
             .then(|| Arc::new(p.pattern.clone()));
         let ticks = if p.pattern.notes.is_empty() { 0 } else { p.pattern.len_ticks };
         self.send(Cmd::SetPattern { pad: idx as u16, pattern });
+        self.arr.dirty = true;
         self.fit_scene_to(ticks);
     }
 
@@ -377,6 +433,8 @@ impl App {
         self.service_plugins();
         self.poll_scenes();
         self.vocal_poll();
+        self.latency_poll();
+        self.poll_arrangement();
         // Effects that follow the project key hear about a change of key.
         if self.key.mask() != self.sent_scale {
             self.sent_scale = self.key.mask();
@@ -424,6 +482,16 @@ impl App {
                 }
                 JobResult::Shifted { key, pad, sample } => self.vocal_shift_done(key, pad, sample),
                 JobResult::Failed(e) => self.status = e,
+                JobResult::Exported { path, secs, peak, detached } => {
+                    self.export_done(&detached);
+                    let db = 20.0 * peak.max(1e-6).log10();
+                    let clip = if peak >= 0.999 { " It clips: bring the master down and export again." } else { "" };
+                    self.status = format!("Exported {secs:.1} s to {} (peak {db:.1} dB).{clip}", path.display());
+                }
+                JobResult::ExportFailed { error, detached } => {
+                    self.export_done(&detached);
+                    self.status = format!("Export failed: {error}");
+                }
             }
         }
 
@@ -449,6 +517,7 @@ impl App {
             }
         }
 
+        self.pad_lights();
         let s = &self.shared;
         s.ui_bank.store(self.bank as u32, Ordering::Relaxed);
         s.ui_selected.store(self.selected as u32, Ordering::Relaxed);
@@ -470,23 +539,117 @@ impl App {
         self.show_prefs = true;
     }
 
-    /// Saves the edited preferences. Interface scale applies at once; anything the audio
-    /// engine reads only at startup waits for the next launch and is left in `prefs_edit`.
+    /// True when the edited preferences change the sample rate, which only a restart of
+    /// the app can bring in (every take and plugin is at the running rate).
+    pub fn prefs_need_relaunch(&self) -> bool {
+        self.prefs_edit.needs_restart(&self.prefs) && audio_io::planned_rate(&self.prefs_edit).is_some_and(|r| r != self.shared.sample_rate)
+    }
+
+    /// Saves the edited preferences. Interface scale applies at once, and a new device,
+    /// buffer size or skip-back length restarts the audio in place. A new sample rate
+    /// waits for the app to be restarted and is left in `prefs_edit`.
     pub fn apply_prefs(&mut self, ctx: &egui::Context) {
         ctx.set_zoom_factor(self.prefs_edit.ui_scale);
+        let relaunch = self.prefs_need_relaunch();
         self.status = match self.prefs_edit.save() {
-            Ok(()) if self.prefs_edit.needs_restart(&self.prefs) => "Preferences saved; audio changes apply after a restart".into(),
+            Ok(()) if relaunch => "Preferences saved; the new sample rate applies after a restart".into(),
             Ok(()) => "Preferences saved".into(),
             Err(e) => format!("Could not save preferences: {e}"),
         };
+        if self.prefs_edit.needs_restart(&self.prefs) && !relaunch {
+            let running = self.prefs.clone();
+            self.prefs.output_device = self.prefs_edit.output_device.clone();
+            self.prefs.sample_rate = self.prefs_edit.sample_rate;
+            self.prefs.buffer_frames = self.prefs_edit.buffer_frames;
+            self.prefs.skipback_minutes = self.prefs_edit.skipback_minutes;
+            if !self.restart_audio() {
+                // Go back to what was running.
+                self.prefs = running;
+                self.restart_audio();
+            }
+        }
         // Keep the engine-level fields as they are running, so the window keeps saying
         // a restart is pending until one happens.
         self.prefs.ui_scale = self.prefs_edit.ui_scale;
+        if self.prefs.pad_lights != self.prefs_edit.pad_lights {
+            self.prefs.pad_lights = self.prefs_edit.pad_lights;
+            if self.prefs.pad_lights {
+                // MIDI ports are opened with or without their light outputs.
+                self.restart_midi();
+            } else {
+                self._midi.leds.close();
+            }
+        }
         if self.prefs.vst3_dirs != self.prefs_edit.vst3_dirs {
             self.prefs.vst3_dirs = self.prefs_edit.vst3_dirs.clone();
             self.catalog.start_scan(false, &self.prefs.vst3_dirs);
         }
         self.show_prefs = false;
+    }
+
+    /// Stops the audio engine and starts a new one with the running preferences, then
+    /// sends it the whole project again. The sample rate must stay the same (see
+    /// [`App::prefs_need_relaunch`]). Skip-back starts empty. False if no device opened.
+    pub fn restart_audio(&mut self) -> bool {
+        self.send(Cmd::Play(false));
+        self.vocal_disarm();
+        self.latency_probe = None;
+        let input = self.input_sel;
+        self.set_input(None);
+        // The old engine goes with its stream; MIDI ports are let go of before reopening.
+        self._stream = None;
+        self._midi = midi::Midi::none();
+        while self.garbage.pop().is_ok() {}
+        let audio = audio_io::start(&self.prefs);
+        self.shared = audio.shared;
+        self.open_midi(audio.tx_midi);
+        self.tx = audio.tx;
+        self.garbage = audio.garbage;
+        self._stream = audio.stream;
+        self.device_name = audio.device_name;
+        self.audio_error = audio.error;
+        // Positions in the old rings mean nothing in the new ones.
+        self.skip.sel = None;
+        self.skip.frozen_end = None;
+        self.skip.mark_in = None;
+        self.queued_scene = None;
+        self.chain_pos = 0;
+        self.sent_scale = 0;
+        self.synced_transport = (0.0, false);
+        self.shared.scene_index.store(self.scene as u32, Ordering::Relaxed);
+        self.push_all();
+        for i in 0..self.fx_plugins.len() {
+            let plugin = self.fx_plugins[i].as_ref().map(|slot| self.rt_for(slot));
+            if plugin.is_some() {
+                self.send(Cmd::SetFxPlugin { slot: i as u8, plugin });
+            }
+        }
+        for k in 0..self.analyzers.len() {
+            self.push_analyzer(k);
+        }
+        self.push_scene_len();
+        if input.is_some() {
+            self.set_input(input);
+        }
+        self.status = match &self.audio_error {
+            Some(e) => format!("Audio unavailable: {e}"),
+            None => format!("Audio restarted: {} @ {} Hz", self.device_name, self.shared.sample_rate),
+        };
+        self.audio_error.is_none()
+    }
+
+    /// Opens the MIDI inputs (and the pad lights, if wanted) feeding the engine queue `tx`.
+    fn open_midi(&mut self, tx: Producer<Cmd>) {
+        let (mtx, midi_rx) = channel();
+        self._midi = midi::start(self.shared.clone(), tx, mtx, self.prefs.pad_lights);
+        self.midi_rx = midi_rx;
+        self.midi_ports = self._midi.port_names.clone();
+    }
+
+    /// Reopens the MIDI ports, as when pad lights are turned on. The engine's MIDI queue
+    /// cannot be handed over twice, so this restarts the audio, which makes a new one.
+    fn restart_midi(&mut self) {
+        self.restart_audio();
     }
 
     /// True while the screen has something to animate: sound, transport, a job, a drag.
@@ -501,6 +664,7 @@ impl App {
             // The LFO scope follows the engine.
             || (self.tab == Tab::Mod && self.pads[self.selected].cfg.lfo_target != crate::engine::LfoTarget::Off)
             || self.input_sel.is_some()
+            || self.latency_probe.is_some()
             || level(MASTER * 2).max(level(MASTER * 2 + 1)) > 1e-4
             || ctx.input(|i| i.pointer.any_down())
     }

@@ -67,7 +67,9 @@ fn strip(app: &mut App, ui: &mut Ui, b: usize) {
     for s in 0..3 {
         effect_slot(app, &mut column, &mut cfg, b, s, left.width(), &mut asks);
     }
-    if b != MASTER {
+    if b == MASTER {
+        analyzers_button(app, &mut column, left.width());
+    } else {
         output_menu(&mut column, &mut cfg, b, left.width());
     }
     let peaks = (f32_load(&app.shared.bus_peak[b * 2]), f32_load(&app.shared.bus_peak[b * 2 + 1]));
@@ -136,7 +138,7 @@ fn effect_slot(app: &mut App, ui: &mut Ui, cfg: &mut BusCfg, b: usize, s: usize,
                 for k in FxKind::ALL {
                     ui.selectable_value(&mut kind, k, k.name());
                 }
-                if ui.selectable_label(kind == FxKind::Vst, "VST3 effect…").clicked() {
+                if ui.selectable_label(kind == FxKind::Vst, "Plugin effect…").clicked() {
                     asks.browse = Some(s);
                 }
             });
@@ -154,12 +156,18 @@ fn effect_slot(app: &mut App, ui: &mut Ui, cfg: &mut BusCfg, b: usize, s: usize,
         FxKind::None => ui.add_space(10.0),
         FxKind::Vst => {
             ui.horizontal(|ui| {
-                knob(ui, &mut slot.params[0], "Mix", 1.0, col);
+                let mix = knob(ui, &mut slot.params[0], "Mix", 1.0, col);
+                asks.hooks.push((mix, AutoTarget::BusParam { bus: b as u8, slot: s as u8, param: 0 }, slot.params[0]));
                 match app.fx_plugins[b * 3 + s].as_ref().map(|p| p.name.clone()) {
                     Some(n) => {
                         let short: String = n.chars().take(14).collect();
                         if ui.button(short).on_hover_text(format!("{n}: open editor")).clicked() {
                             asks.editor = Some(s);
+                        }
+                        if app.shared.fx_silent[b * 3 + s].load(std::sync::atomic::Ordering::Relaxed) {
+                            ui.label(egui::RichText::new("silent").small().color(theme::RED)).on_hover_text(
+                                "This plugin has put out no sound at all for several seconds while being sent a clear signal, so the bus is passing it by rather than going quiet. It is heard again as soon as it makes a sound. Some plugins do not work when hosted here.",
+                            );
                         }
                     }
                     None => {
@@ -246,6 +254,90 @@ fn output_menu(ui: &mut Ui, cfg: &mut BusCfg, b: usize, width: f32) {
             .response
             .on_hover_text("Where this bus goes");
     });
+}
+
+/// Under the master's slots, where the other strips have their output: the button that
+/// opens the analyzer slots, saying how many are in use.
+fn analyzers_button(app: &mut App, ui: &mut Ui, width: f32) {
+    ui.add_space(4.0);
+    let used = app.analyzers.iter().filter(|a| a.0.is_some()).count();
+    let text = if used == 0 { "Analyzers".to_string() } else { format!("Analyzers ({used})") };
+    let label = egui::RichText::new(text).color(if app.show_analyzers { theme::BG } else { theme::TEXT });
+    let mut button = egui::Button::new(label).min_size(vec2((width - 6.0).clamp(50.0, 110.0), 0.0));
+    if app.show_analyzers {
+        button = button.fill(theme::CYAN);
+    }
+    ui.horizontal(|ui| {
+        ui.add_space(((width - (width - 6.0).clamp(50.0, 110.0)) * 0.5).max(0.0));
+        if ui
+            .add(button)
+            .on_hover_text("Slots for metering plugins (SPAN, Insight, Lucent and the like). They listen to a bus without changing its sound.")
+            .clicked()
+        {
+            app.show_analyzers ^= true;
+        }
+    });
+}
+
+/// The analyzer slots: each a plugin and the bus it listens to, after its fader.
+pub fn analyzers_window(app: &mut App, ctx: &egui::Context) {
+    if !app.show_analyzers {
+        return;
+    }
+    let mut open = true;
+    let mut ask: Option<(usize, u8)> = None;
+    // Near the master strip it opens from, clear of the transport.
+    let screen = ctx.content_rect();
+    let at = Pos2::new(screen.right() - 420.0, screen.bottom() - 560.0);
+    egui::Window::new("Analyzers").open(&mut open).resizable(false).collapsible(false).default_width(380.0).default_pos(at).show(ctx, |ui| {
+        ui.label(
+            egui::RichText::new("Each slot hears a copy of a bus after its fader. What the plugin puts out is not heard, so it cannot change the mix.")
+                .small()
+                .color(theme::DIM),
+        );
+        ui.add_space(6.0);
+        egui::Grid::new("analyzer_slots").num_columns(4).spacing([8.0, 8.0]).show(ui, |ui| {
+            for k in 0..app.analyzers.len() {
+                ui.label(egui::RichText::new(format!("{}", k + 1)).color(theme::DIM));
+                let mut source = app.analyzers[k].1;
+                egui::ComboBox::from_id_salt(("analyzer_src", k)).width(80.0).selected_text(bus_label(source)).show_ui(ui, |ui| {
+                    for bus in (0..NUM_BUSES).rev() {
+                        ui.selectable_value(&mut source, bus, bus_label(bus));
+                    }
+                });
+                if source != app.analyzers[k].1 {
+                    app.set_analyzer_source(k, source);
+                }
+                match app.analyzers[k].0.as_ref().map(|p| p.name.clone()) {
+                    Some(name) => {
+                        let short: String = name.chars().take(22).collect();
+                        if ui.button(short).on_hover_text(format!("{name}: open its window")).clicked() {
+                            ask = Some((k, 1));
+                        }
+                        if ui.small_button("Remove").clicked() {
+                            ask = Some((k, 2));
+                        }
+                    }
+                    None => {
+                        if ui.button("Choose…").clicked() {
+                            ask = Some((k, 0));
+                        }
+                        ui.label("");
+                    }
+                }
+                ui.end_row();
+            }
+        });
+    });
+    match ask {
+        Some((k, 0)) => app.open_browser(PluginTarget::Analyzer(k)),
+        Some((k, 1)) => app.open_editor(PluginTarget::Analyzer(k)),
+        Some((k, _)) => app.remove_plugin(PluginTarget::Analyzer(k)),
+        None => {}
+    }
+    if !open {
+        app.show_analyzers = false;
+    }
 }
 
 /// The "SC" button and its popup: which bus keys this one, and what the key does to it.

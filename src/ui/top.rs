@@ -9,7 +9,7 @@ use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Ui,
 
 pub fn draw(app: &mut App, ui: &mut Ui) {
     let full = ui.available_rect_before_wrap();
-    let split = full.left() + 532.0;
+    let split = full.left() + 600.0;
     let left = Rect::from_min_max(full.min, Pos2::new(split, full.bottom()));
     let right = Rect::from_min_max(Pos2::new(split + 6.0, full.top()), full.max);
     theme::card_in(ui, left, None, |ui| transport(app, ui));
@@ -99,6 +99,13 @@ fn transport(app: &mut App, ui: &mut Ui) {
         if ui.add(stop).on_hover_text("Shift+Space: stop the transport and silence everything, effect tails included").clicked() {
             app.stop_all();
         }
+        let song = app.view == crate::app::View::Arrange;
+        if toggle(ui, song, "Song", theme::GREEN)
+            .on_hover_text("F3: the arrangement, where loops become a song. Play from here plays the song.")
+            .clicked()
+        {
+            app.toggle_view();
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button("Help").on_hover_text("F1").clicked() {
                 app.show_help ^= true;
@@ -107,6 +114,10 @@ fn transport(app: &mut App, ui: &mut Ui) {
                 app.open_prefs();
             }
             ui.menu_button("File", |ui| {
+                if ui.button("New project    Ctrl+N").clicked() {
+                    app.request_new();
+                    ui.close();
+                }
                 if ui.button("Open project…    Ctrl+O").clicked() {
                     crate::project::open_dialog(app);
                     ui.close();

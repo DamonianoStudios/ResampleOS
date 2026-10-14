@@ -8,13 +8,14 @@
 cargo run --release -- showcase/built-in-boom-bap
 ```
 
-Press `Space`. The chain is on, so it plays the whole two-minute arrangement: Intro, Verse A, Verse B, Break, Verse A, Verse B, Outro. It is 88 BPM in A minor, with 57% swing.
+It opens on the Song view, with the song laid out on the arrangement: Intro, Verse A, Verse B, Break, Verse A, Verse B, Outro. Press `Space` to play it. In the second Verse A the kick and bass come in two bars late, a change made on the arrangement alone (their clips start part-way into the loop). Press `F3` for the pads, where the chain plays the same loops in the same order. It is 88 BPM in A minor, with 57% swing.
 
 What it shows:
 
 - **Drum synth pads** A01 to A08 and A13 to A16: kick, snare, clap, rim, closed and open hat (choked together), shaker, conga, an 808 boom, a laser zap, a ride and a tom. Some knobs move with velocity or wander a little on every hit, and the hats and percussion are humanized.
 - **Internal synths** on A09 to A12: an 808 sub bass, FM keys playing Am7, Fmaj7, Dm7, Em7, a square-wave lead in Verse B, and a soft saw pad.
 - **Buses:** drums glued by the compressor and tape; keys through vinyl, a DJ filter and reverb; the lead through a tape echo and reverb; the bass ducked under the drums by the sidechain.
+- **Arrangement:** the chain laid out as a song, a section per loop and a clip per pad, and one change the loops alone can't make. **Export song…** renders it to a WAV file.
 - **Automation**, one idea per loop (open the **Automation** tab on each):
   - Intro: the keys' DJ filter opens over four bars.
   - Verse B: echo throws on the lead at the end of bars 2 and 8.

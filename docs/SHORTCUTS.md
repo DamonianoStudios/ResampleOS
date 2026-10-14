@@ -91,9 +91,11 @@ These apply while the piano roll is showing.
 | `P` | Perform mode: the pad keys and controller pads launch loops 1 to 16 |
 | `1` to `4`, `5` | Focus Bus 1 to 4, or the master |
 | `F1` | Shortcut help |
-| `F2` | VST3 browser, to load an instrument on the selected pad |
+| `F2` | Plugin browser (VST3 and CLAP), to load an instrument on the selected pad |
+| `F3` | Switch between the pads and the song (arrangement) |
 | `Ctrl+,` | Preferences |
 | `Ctrl+S` / `Ctrl+O` | Save and open a project |
+| `Ctrl+N` | New project (asks first if there are unsaved changes) |
 
 ## Mouse
 
@@ -111,6 +113,7 @@ These apply while the piano roll is showing.
 | Piano roll | Drag a selected note | Move or resize the whole selection |
 | Piano roll | `Ctrl` + drag a note | Duplicate: copies stay, the dragged notes move |
 | Choke matrix | Click or drag | Assign pads to a group. Start on a lit cell to clear |
+| Velocity lane | Click or drag a stem | Set velocity: the whole stack at that position, or only its selected notes |
 | Piano roll | Right-click a note | Delete it |
 | Piano roll | `Ctrl` + scroll | Zoom the time axis around the pointer |
 | Piano roll | `Shift` + scroll, or drag the bar under the grid | Move along the pattern. Double-click the bar to see all of it |
@@ -121,6 +124,7 @@ These apply while the piano roll is showing.
 | Step of a drum pad | `Alt` + click | Lock knob values to that step |
 | Bus knob, slider, fader or pan; pad volume, pan or cutoff | Right-click | Automate it in this loop |
 | Automation lane | Click, drag, right-click | Add a point, move it, delete it. `Alt` places it off the grid |
+| Ring between two lane points | Drag, double-click | Bend the line between them, straighten it |
 | Take lane | Drag (Comp tool) | Put that stretch of the take in the comp |
 | Vocal clip | Drag (Move tool) | Move in time or to another lane. `Alt` + drag slips the audio inside it |
 | Vocal clip | Click (Cut tool) | Cut in two. Right-click for mute, repeat, delete, use in comp |
@@ -152,3 +156,21 @@ Every MIDI input present when the app starts is opened. Pad hits go straight fro
 | 25 | Chromatic mode on or off |
 
 Button CCs act on any value above zero. The mapping is fixed; there is no MIDI learn yet, and the app does not send LED feedback to controllers.
+
+## The arrangement
+
+| Shortcut | Action |
+| --- | --- |
+| `Space` (in the Song view) | Play the song from the insert marker, or stop |
+| Click the ruler | Move the insert marker and the playhead |
+| Drag the strip above the ruler | Set the loop brace; click it to turn it on and off |
+| Double-click an empty track | Add a clip |
+| Drag a clip / its edge | Move it / trim it |
+| `Shift`+click a clip | Add it to the selection |
+| Double-click a clip | Open its loop on the pads |
+| `Ctrl+D` | Duplicate the selected clips or section |
+| `Ctrl+E` | Split at the insert marker |
+| `Del` | Delete the selected clips or section |
+| `Home` | Insert marker to the start |
+| `Esc` | Clear the selection |
+| `Ctrl`+scroll / `Shift`+scroll | Zoom / move along the song |
