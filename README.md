@@ -39,7 +39,7 @@ A short tour of the tabs: [demo-tour.gif](docs/images/demo-tour.gif).
 You need [Rust](https://rustup.rs) 1.88 or newer and, on Windows, the MSVC build tools.
 
 ```bash
-git clone <this repository>
+git clone https://github.com/DamonianoStudios/ResampleOS
 cd ResampleOS
 cargo run --release
 ```
