@@ -13,7 +13,9 @@ ResampleOS is a pad-based DAW built around committing to audio. Linear DAWs make
 | ![Vocal takes](docs/images/vocal.png) | ![Step sequencer](docs/images/steps.png) |
 | Vocal takes, comp and doubles | Step sequencer for the whole bank |
 | ![Mod / Warp](docs/images/mod-warp.png) | ![Perform mode](docs/images/perform.png) |
-| Filter, LFO and warp per pad | Perform mode: the pads launch loops |
+| Filter, LFO and warp per pad | Perform mode: the pads launch loops | 
+
+![Piano Roll](docs/images/ResampleOS_PianoRoll.png) | A Piano roll | Piano roll: Place midi notes |
 
 A short tour of the tabs: [demo-tour.gif](docs/images/demo-tour.gif).
 
@@ -40,7 +42,7 @@ A short tour of the tabs: [demo-tour.gif](docs/images/demo-tour.gif).
 You need [Rust](https://rustup.rs) 1.88 or newer and, on Windows, the MSVC build tools.
 
 ```bash
-git clone <this repository>
+git clone https://github.com/DamonianoStudios/ResampleOS
 cd ResampleOS
 cargo run --release
 ```
