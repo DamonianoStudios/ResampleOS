@@ -41,6 +41,8 @@ A short tour of the tabs: [demo-tour.gif](docs/images/demo-tour.gif).
 - **Vocal takes.** A vocal pad records a take each time round the loop, with swipe comping, cut, move and slip editing, doubles, and baking to a pad or to a bank of phrases. A dedicated vocal bus has scale-locked pitch correction, levelling and a dub throw.
 - **Performance buses.** Four buses, a vocal bus and a master, three effect slots each: vinyl, cassette, 3-band EQ, DJ isolator and filter, bit-crush, compressor, tape delay, reverb. Buses can feed later buses and can be sidechained from one another.
 - **VST3 and CLAP hosting.** Instruments on pads, effects on buses and four analyzer slots that listen without touching the mix, with a scanner that copes with libraries of a thousand plugins or more. Plugin editors open in their own windows, scaled for high-DPI displays.
+- **Sample browser.** Your sample folders inside the app, beside the pads or the timeline: browse, search, favourites, audition with the arrow keys, and drag onto a pad or the timeline.
+- **MIDI files** in and out: onto pads or the timeline, and a pad or the whole song out. **Stems** by track or by bus, and **freeze** to spare the processor.
 - **External input**, **MIDI controllers**, **project-wide undo and redo**.
 
 ## Getting started

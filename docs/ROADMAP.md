@@ -43,7 +43,7 @@ Nothing here is a promise of dates. Sizes are relative: **S** is a few days of w
 | --- | --- | --- |
 | 0.2 | Arrangement, part 1 | A song timeline per project; loops and patterns placed as clips; play from anywhere; the chain becomes a song in one click; song export |
 | 0.3 | Arrangement, part 2 | Audio clips, recording onto the timeline, performance capture, song-length automation, markers (released in 0.3.0) |
-| 0.4 | Browser, mixer and export | A built-in sample browser (see [below](#sample-browser)), return tracks and sends, more buses and slots, stems, freeze, MIDI file import and export (in progress: see [0.4 progress](#04-progress)) |
+| 0.4 | Browser, mixer and export | A built-in sample browser (see [below](#sample-browser)), return tracks and sends, more buses and slots, stems, freeze, MIDI file import and export (in progress; the browser, MIDI files, stems and freeze released early in [0.3.5](releases/v0.3.5.md): see [0.4 progress](#04-progress)) |
 | 0.5 | Pro audio | ASIO and exclusive-mode audio, plugin delay compensation, multi-core engine, plugin crash isolation, autosave |
 | 0.6 | Time and MIDI depth | Tempo and time-signature changes, CC, pitch-bend and MPE lanes, groove, chord and scale tools, MIDI out and sync |
 | 0.7 | Sound | Multisample sampler, a wavetable synth, better stock effects, tags and a stock library in the sample browser |
