@@ -39,7 +39,11 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
 
     // Files dropped from the OS land on the pad under the cursor, spilling onto the next pads.
     let dropped = ctx.input(|i| i.raw.dropped_files.clone());
-    if !dropped.is_empty() {
+    if !dropped.is_empty() && app.view == crate::app::View::Arrange {
+        // On the timeline they become audio clips, on the track under the pointer.
+        let (pad, at) = app.arr.drop_at.unwrap_or((None, app.arr.cursor));
+        app.drop_song_audio(dropped.iter().map(|f| f.path().to_path_buf()).collect(), pad, at);
+    } else if !dropped.is_empty() {
         let at = ctx.pointer_hover_pos().or_else(|| ctx.pointer_interact_pos());
         let mut pad = at
             .and_then(|p| app.pad_rects.iter().find(|(_, r)| r.contains(p)).map(|(i, _)| *i))

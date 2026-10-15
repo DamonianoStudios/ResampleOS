@@ -1,10 +1,11 @@
-//! Automation: lanes that move bus, pad, drum and plugin controls through a loop.
+//! Automation: lanes that move bus, pad, drum and plugin controls through a loop or the song.
 //!
 //! Each loop has its own lanes, kept on the loop itself, so they switch with it on the beat
-//! and are saved and undone with it. A lane is drawn in the Automation tab, or recorded by
-//! turning a control while the transport runs with Rec on. The engine plays the lanes of
-//! the loop that is playing on top of the controls as they were set by hand, and lets go
-//! of a control as soon as nothing automates it.
+//! and are saved and undone with it. The arrangement has song-length lanes of its own, which
+//! play over the lanes its sections bring from their loops. A lane is drawn in the
+//! Automation tab (the song's under the timeline), or recorded by turning a control while
+//! the transport runs with Rec on. The engine plays the lanes on top of the controls as
+//! they were set by hand, and lets go of a control as soon as nothing automates it.
 
 use super::*;
 use crate::engine::{AutoLane, AutoPoint, AutoTarget};
@@ -25,6 +26,15 @@ impl PluginTarget {
     }
 }
 
+/// Which lanes the automation tools work on.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AutoScope {
+    /// The loop on screen's.
+    Loop,
+    /// The song's, in song ticks.
+    Song,
+}
+
 #[derive(Default)]
 pub struct AutoUi {
     /// Record moves of automatable controls while the transport runs.
@@ -43,9 +53,32 @@ pub struct AutoUi {
 }
 
 impl App {
-    /// The lanes of the loop on screen.
+    /// The song's lanes on the song view, the loop on screen's on the pads.
+    pub fn auto_scope(&self) -> AutoScope {
+        if self.view == View::Arrange { AutoScope::Song } else { AutoScope::Loop }
+    }
+
+    /// The lanes the automation tools are working on (see `auto_scope`).
     pub fn lanes(&self) -> &[AutoLane] {
-        &self.scenes[self.scene].automation
+        self.lanes_in(self.auto_scope())
+    }
+
+    pub fn lanes_in(&self, scope: AutoScope) -> &[AutoLane] {
+        match scope {
+            AutoScope::Loop => &self.scenes[self.scene].automation,
+            AutoScope::Song => &self.arrangement.automation,
+        }
+    }
+
+    /// Where lanes in `scope` are now, in their own ticks, while the transport runs.
+    pub fn lane_now(&self, scope: AutoScope) -> Option<f64> {
+        if !self.playing() {
+            return None;
+        }
+        match scope {
+            AutoScope::Loop => Some(self.shared.tick().rem_euclid((self.scenes[self.scene].bars * TICKS_PER_BAR).max(1) as f64)),
+            AutoScope::Song => self.song_mode.then(|| self.song_pos()),
+        }
     }
 
     pub fn is_automated(&self, target: AutoTarget) -> bool {
@@ -66,21 +99,40 @@ impl App {
         (!lanes.is_empty()).then(|| Arc::new(lanes.clone()))
     }
 
-    /// Changes the lanes of the loop on screen and tells the engine.
+    /// Changes the lanes the automation tools are working on, and tells the engine.
     pub fn edit_lanes(&mut self, f: impl FnOnce(&mut Vec<AutoLane>)) {
-        f(&mut self.scenes[self.scene].automation);
-        self.push_automation();
+        self.edit_lanes_in(self.auto_scope(), f);
     }
 
-    /// Adds a lane for `target` to the loop on screen (if it has none), starting flat at
-    /// the control's current value, and opens the Automation tab on it.
+    pub fn edit_lanes_in(&mut self, scope: AutoScope, f: impl FnOnce(&mut Vec<AutoLane>)) {
+        match scope {
+            AutoScope::Loop => {
+                f(&mut self.scenes[self.scene].automation);
+                self.push_automation();
+            }
+            // The engine hears of it with the rest of the arrangement.
+            AutoScope::Song => f(&mut self.arrangement.automation),
+        }
+    }
+
+    /// Adds a lane for `target` (if there is none), starting flat at the control's current
+    /// value, and shows it: in the loop on screen, or on the song view in the song.
     pub fn automate(&mut self, target: AutoTarget) {
         if !self.lanes().iter().any(|l| l.target == target) {
             let value = self.control_value(target);
             self.edit_lanes(|lanes| lanes.push(AutoLane { target, points: vec![AutoPoint::new(0, value)] }));
         }
-        self.tab = Tab::Auto;
-        self.status = format!("Automating {} in this loop. Draw it here, or turn it with Rec on while playing.", self.target_name(target));
+        let name = self.target_name(target);
+        match self.auto_scope() {
+            AutoScope::Loop => {
+                self.tab = Tab::Auto;
+                self.status = format!("Automating {name} in this loop. Draw it here, or turn it with Rec on while playing.");
+            }
+            AutoScope::Song => {
+                self.arr.show_auto = true;
+                self.status = format!("Automating {name} in the song. Draw it under the timeline, or turn it with Rec on while the song plays.");
+            }
+        }
     }
 
     /// The control's value as set by hand, as a lane value.
@@ -200,15 +252,20 @@ impl App {
 
     /// Records a control's move into its lane while the transport runs with Rec on: the
     /// stretch of the lane the playhead has crossed since the last write is replaced.
+    /// Writes go into what is playing: the song's lanes while the song plays, otherwise
+    /// the loop's.
     pub fn record_control(&mut self, target: AutoTarget, raw: f32) {
+        self.perf_control(target, target.scale_down(raw));
         if !self.auto.rec || !self.playing() {
             return;
         }
-        let len = self.scenes[self.scene].bars * TICKS_PER_BAR;
-        let now = self.shared.tick().rem_euclid(len.max(1) as f64);
+        let scope = if self.song_mode { AutoScope::Song } else { AutoScope::Loop };
+        let Some(now) = self.lane_now(scope) else { return };
         let value = target.scale_down(raw);
-        let since = self.auto.writing.iter().find(|(t, _)| *t == target).map(|(_, at)| *at);
-        self.edit_lanes(|lanes| {
+        // In the song, going back round the loop brace is a jump, not a lap: nothing
+        // between is overwritten.
+        let since = self.auto.writing.iter().find(|(t, _)| *t == target).map(|(_, at)| *at).filter(|from| scope == AutoScope::Loop || *from <= now);
+        self.edit_lanes_in(scope, |lanes| {
             let lane = match lanes.iter().position(|l| l.target == target) {
                 Some(i) => &mut lanes[i],
                 None => {

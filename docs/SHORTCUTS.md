@@ -93,6 +93,7 @@ These apply while the piano roll is showing.
 | `F1` | Shortcut help |
 | `F2` | Plugin browser (VST3 and CLAP), to load an instrument on the selected pad |
 | `F3` | Switch between the pads and the song (arrangement) |
+| `F9` | Rec onto the song timeline on or off |
 | `Ctrl+,` | Preferences |
 | `Ctrl+S` / `Ctrl+O` | Save and open a project |
 | `Ctrl+N` | New project (asks first if there are unsaved changes) |
@@ -166,11 +167,20 @@ Button CCs act on any value above zero. The mapping is fixed; there is no MIDI l
 | Drag the strip above the ruler | Set the loop brace; click it to turn it on and off |
 | Double-click an empty track | Add a clip |
 | Drag a clip / its edge | Move it / trim it |
-| `Shift`+click a clip | Add it to the selection |
+| `Shift`+click a clip or section | Add it to the selection |
+| Drag across empty space | Select everything the box touches (`Shift` adds) |
+| `Ctrl+A` | Select every clip and section |
 | Double-click a clip | Open its loop on the pads |
-| `Ctrl+D` | Duplicate the selected clips or section |
+| `Ctrl+D` | Duplicate the selected clips and sections |
 | `Ctrl+E` | Split at the insert marker |
-| `Del` | Delete the selected clips or section |
+| `Ctrl+J` | Consolidate the selected clips of a track into one audio clip |
+| `Alt` while dragging or clicking | Place off the grid (clips, edges, markers, the insert marker) |
+| `Del` | Delete the selected clips, and selected sections with their clips |
 | `Home` | Insert marker to the start |
 | `Esc` | Clear the selection |
 | `Ctrl`+scroll / `Shift`+scroll | Zoom / move along the song |
+| Drop audio files on a track / elsewhere | Audio clips on that track / on new tracks |
+| Right-click an empty track | Import audio there, or put the pad's sample there |
+| Right-click an audio clip | Gain and fades |
+| Right-click the ruler | Add a marker, insert or delete a bar (or the braced time) |
+| Click / drag a marker | Go there / move it |

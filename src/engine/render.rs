@@ -28,6 +28,11 @@ impl Engine {
             b[1][..n].fill(0.0);
         }
         let tps = (self.bpm as f64 / 60.0) * PPQ as f64 / self.sr as f64;
+        if self.playing {
+            // This block's input lands in the ring from here on; recording onto the song
+            // timeline lines the two up with it.
+            self.shared.set_song_anchor(self.shared.input_ring.written(), self.song_pos);
+        }
         self.sequence(n as f64 * tps, tps);
         if self.playing {
             if self.song_mode {
@@ -37,6 +42,7 @@ impl Engine {
             }
         }
         self.render_voices(n);
+        self.render_song_audio(n, tps);
         self.render_plugins(n);
         self.pull_input(n);
         self.mix_buses(n);
@@ -785,14 +791,14 @@ fn humanized_notes(
 
 /// Equal-power pan for a mono-summed source: unity on both sides at centre.
 #[inline]
-fn pan_gains(pan: f32, vol: f32) -> (f32, f32) {
+pub(super) fn pan_gains(pan: f32, vol: f32) -> (f32, f32) {
     let angle = (pan + 1.0) * FRAC_PI_4;
     (angle.cos() * SQRT_2 * vol, angle.sin() * SQRT_2 * vol)
 }
 
 /// Marks `pad` as sounding at `level` for the UI, remembering it so the next block can
 /// clear the mark if the pad has gone quiet.
-fn report_level(shared: &Shared, touched: &mut Vec<u16>, pad: u16, level: f32) {
+pub(super) fn report_level(shared: &Shared, touched: &mut Vec<u16>, pad: u16, level: f32) {
     let slot = &shared.pad_level[pad as usize];
     let cur = f32_load(slot);
     if cur == 0.0 {

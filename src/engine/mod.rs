@@ -137,6 +137,15 @@ pub struct Engine {
     song_section: Option<usize>,
     /// Pads with a track in the arrangement.
     song_pads: Vec<u16>,
+    /// The stretches of song this block covers (more than one when the loop brace wraps
+    /// in it): (tick, first frame, frames, follows a jump).
+    song_segs: [(f64, usize, usize, bool); 4],
+    song_nsegs: usize,
+    /// Audio clips fade in over a few milliseconds after a jump (a locate, the brace
+    /// wrapping, play), so they don't click in mid-waveform; and out again on stop.
+    song_ramp: f32,
+    song_jump: bool,
+    song_fading: bool,
     /// Runs whether or not the transport does, so note repeat works when stopped.
     free_tick: f64,
     metronome: bool,
@@ -241,6 +250,11 @@ impl Engine {
             brace: None,
             song_section: None,
             song_pads: Vec::with_capacity(MAX_PADS),
+            song_segs: [(0.0, 0, 0, false); 4],
+            song_nsegs: 0,
+            song_ramp: 0.0,
+            song_jump: true,
+            song_fading: false,
             free_tick: 0.0,
             metronome: false,
             click_phase: 0.0,
@@ -330,8 +344,14 @@ impl Engine {
 
     /// Moves the controls `lanes` automate to where the lanes are at tick `at` of their loop.
     fn apply_lanes(&mut self, lanes: &Automation, at: f64) {
-        let Engine { buses, bus_base, pads, auto_pads, pad_plugins, fx_plugins, .. } = self;
-        *buses = *bus_base;
+        self.buses = self.bus_base;
+        self.layer_lanes(lanes, at);
+    }
+
+    /// As `apply_lanes`, on top of what other lanes have already moved this block (the
+    /// buses are not put back first).
+    fn layer_lanes(&mut self, lanes: &Automation, at: f64) {
+        let Engine { buses, pads, auto_pads, pad_plugins, fx_plugins, .. } = self;
         for lane in lanes.iter() {
             let Some(v) = lane.value_at(at) else { continue };
             let value = lane.target.scale_up(v);
@@ -614,6 +634,8 @@ impl Engine {
                 if on && !self.playing {
                     // A loop plays from its top; the song from wherever its playhead is.
                     self.tick = if self.song_mode { self.song_pos } else { 0.0 };
+                    self.song_jump = true;
+                    self.song_fading = false;
                     self.scene_pass = 0;
                     self.song_tick = 0.0;
                     self.shared.loop_frame.store(self.shared.input_ring.written(), Ordering::Relaxed);
@@ -632,6 +654,7 @@ impl Engine {
                     self.plugin_notes_off(None);
                     // Automated controls go back to where they were set by hand.
                     self.release_automation();
+                    self.song_fading = self.playing && self.song_mode;
                 }
                 self.playing = on;
                 self.shared.playing.store(on, Ordering::Relaxed);

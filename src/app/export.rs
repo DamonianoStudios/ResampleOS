@@ -1,9 +1,10 @@
-//! Song export: the arrangement rendered to a WAV file by a second, offline engine.
+//! Offline renders: the arrangement (or part of it) played by a second engine on a
+//! background thread, as fast as it goes. Song export writes it to a WAV file;
+//! consolidate and bake turn part of it into audio clips.
 //!
-//! The offline engine is the same engine the app plays through, given the whole project
-//! and the arrangement and run as fast as it can on a background thread, so the file is
-//! what playback sounds like. Hosted plugins can't be run by two engines at once, so the
-//! live engine lets go of them for the length of the export and takes them back after.
+//! The offline engine is the same engine the app plays through, so a render is what
+//! playback sounds like. Hosted plugins can't be run by two engines at once, so the live
+//! engine lets go of them for the length of the render and takes them back after.
 
 use super::*;
 use crate::engine::{Engine, SongCmd};
@@ -32,6 +33,26 @@ impl Depth {
 
 /// How long a render may ring on after the song ends, at most, in seconds.
 const TAIL_SECS: f32 = 8.0;
+
+/// What an offline render plays, and how.
+pub(super) struct Offline {
+    pub plan: crate::engine::ArrangementPlan,
+    /// Song ticks.
+    pub start: u64,
+    pub end: u64,
+    /// Ring out past the end until quiet.
+    pub tail: bool,
+    /// Through the buses and their effects (and the master's); otherwise each pad is heard
+    /// dry, at full level and centred, as a pad's own sound.
+    pub wet: bool,
+    /// Only these pads are set up (all, if `None`).
+    pub pads: Option<Vec<usize>>,
+    /// The master's effects and level too (song export), or a plain master.
+    pub master: bool,
+}
+
+/// What a finished render becomes: given the audio and where it began, makes the job result.
+type Finish = Box<dyn FnOnce(Vec<f32>, Vec<f32>, Vec<PluginTarget>) -> JobResult + Send>;
 
 impl App {
     /// Asks where to write the song, then exports it.
@@ -67,12 +88,31 @@ impl App {
             self.status = "Nothing to export: the song is empty".into();
             return;
         }
-        if self.exporting {
-            return;
+        let job = Offline { plan: self.song_plan(), start, end, tail: true, wet: true, pads: None, master: true };
+        let path = path.to_path_buf();
+        let sr = self.shared.sample_rate;
+        let finish: Finish = Box::new(move |l, r, detached| {
+            let peak = l.iter().chain(&r).fold(0f32, |m, v| m.max(v.abs()));
+            write_wav(&path, &l, &r, sr, depth)
+                .map(|()| JobResult::Exported { path, secs: l.len() as f32 / sr as f32, peak, detached: detached.clone() })
+                .unwrap_or_else(|e| JobResult::ExportFailed { error: e, detached })
+        });
+        if self.render_offline(job, finish) {
+            self.status = format!("Exporting {:.1} s of song…", (end - start) as f64 / (self.bpm as f64 / 60.0 * PPQ as f64));
+        }
+    }
+
+    /// Plays `job` on an offline engine in the background, then hands the audio to
+    /// `finish` (on that thread) for the job result. False if a render is already going.
+    pub(super) fn render_offline(&mut self, job: Offline, finish: Finish) -> bool {
+        let Offline { plan, start, end, tail, wet, pads, master } = job;
+        if self.exporting || end <= start {
+            return false;
         }
         if self.playing() {
             self.toggle_play();
         }
+        let wanted = |i: usize| pads.as_ref().is_none_or(|p| p.contains(&i));
         let sr = self.shared.sample_rate;
         let shared = Arc::new(crate::shared::Shared::new(sr, 10));
         let (mut tx, rx) = RingBuffer::new(1 << 16);
@@ -83,36 +123,39 @@ impl App {
             let _ = tx.push(cmd);
         };
 
-        // The whole project, as the live engine has it.
+        // The project, as the live engine has it (or as much of it as the render needs).
         for (b, cfg) in self.buses.iter().enumerate() {
-            send(Cmd::SetBus { bus: b as u8, cfg: *cfg });
+            let plain = !wet || (b == crate::shared::MASTER && !master);
+            send(Cmd::SetBus { bus: b as u8, cfg: if plain { BusCfg::default() } else { *cfg } });
         }
         send(Cmd::SetBpm(self.bpm));
         send(Cmd::SetSwing(self.swing));
         send(Cmd::SetScale(self.key.mask()));
         send(Cmd::SetVocalFx(self.vocal_fx));
         for (i, p) in self.pads.iter().enumerate() {
-            if p.is_empty() && p.cfg == PadCfg::default() {
+            if (p.is_empty() && p.cfg == PadCfg::default()) || !wanted(i) {
                 continue;
             }
-            send(Cmd::SetPadCfg { pad: i as u16, cfg: p.cfg });
+            let cfg = if wet { PadCfg { mute: false, solo: false, ..p.cfg } } else { PadCfg { vol: 1.0, pan: 0.0, bus: 0, mute: false, solo: false, ..p.cfg } };
+            send(Cmd::SetPadCfg { pad: i as u16, cfg });
             send(Cmd::SetSample { pad: i as u16, sample: p.sample().cloned() });
         }
-        // Plugins move to the offline engine for the export.
+        // Plugins move to the offline engine for the render.
         let mut detached = Vec::new();
         for i in 0..self.pads.len() {
-            if let Some(slot) = &self.pads[i].plugin {
+            if let Some(slot) = self.pads[i].plugin.as_ref().filter(|_| wanted(i)) {
                 send(Cmd::SetPadPlugin { pad: i as u16, plugin: Some(self.rt_for(slot)) });
                 detached.push(PluginTarget::Pad(i));
             }
         }
         for i in 0..self.fx_plugins.len() {
-            if let Some(slot) = &self.fx_plugins[i] {
+            let on_master = i / 3 == crate::shared::MASTER;
+            if let Some(slot) = self.fx_plugins[i].as_ref().filter(|_| wet && (master || !on_master)) {
                 send(Cmd::SetFxPlugin { slot: i as u8, plugin: Some(self.rt_for(slot)) });
                 detached.push(PluginTarget::Fx(i / 3, i % 3));
             }
         }
-        send(Cmd::Song(SongCmd::Plan(Some(Arc::new(self.song_plan())))));
+        send(Cmd::Song(SongCmd::Plan(Some(Arc::new(plan)))));
         send(Cmd::Song(SongCmd::Mode(true)));
         send(Cmd::Song(SongCmd::Locate(start as f64)));
         send(Cmd::Play(true));
@@ -126,11 +169,9 @@ impl App {
 
         let ticks_per_sec = self.bpm as f64 / 60.0 * PPQ as f64;
         let frames = ((end - start) as f64 / ticks_per_sec * sr as f64).round() as usize;
-        let path = path.to_path_buf();
         let jobs = self.jobs_tx.clone();
         self.exporting = true;
         self.busy += 1;
-        self.status = format!("Exporting {:.1} s of song…", frames as f32 / sr as f32);
         std::thread::spawn(move || {
             let mut l = Vec::with_capacity(frames + sr as usize);
             let mut r = Vec::with_capacity(frames + sr as usize);
@@ -152,12 +193,12 @@ impl App {
             // Past the end nothing new starts; what is sounding rings out, until it has
             // been quiet for half a second.
             let _ = tx.push(Cmd::Song(SongCmd::Plan(None)));
-            let (mut quiet, mut tail) = (0, 0);
-            let max_tail = (TAIL_SECS * sr as f32) as usize;
-            while tail < max_tail && quiet < sr as usize / 2 {
+            let (mut quiet, mut rung) = (0, 0);
+            let max_tail = if tail { (TAIL_SECS * sr as f32) as usize } else { 0 };
+            while rung < max_tail && quiet < sr as usize / 2 {
                 let before = l.len();
                 render(&mut engine, 512, &mut l, &mut r);
-                tail += 512;
+                rung += 512;
                 let loud = l[before..].iter().chain(&r[before..]).any(|v| v.abs() > 1e-4);
                 quiet = if loud { 0 } else { quiet + 512 };
             }
@@ -166,12 +207,9 @@ impl App {
             l.truncate(keep);
             r.truncate(keep);
             drop(engine);
-            let peak = l.iter().chain(&r).fold(0f32, |m, v| m.max(v.abs()));
-            let result = write_wav(&path, &l, &r, sr, depth)
-                .map(|()| JobResult::Exported { path, secs: l.len() as f32 / sr as f32, peak, detached: detached.clone() })
-                .unwrap_or_else(|e| JobResult::ExportFailed { error: e, detached });
-            let _ = jobs.send(result);
+            let _ = jobs.send(finish(l, r, detached));
         });
+        true
     }
 
     /// The export has finished (or failed): the live engine takes its plugins back.

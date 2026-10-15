@@ -284,7 +284,8 @@ impl App {
 
     pub(super) fn next_empty_pad(&mut self) -> Option<usize> {
         let from = self.bank * 16;
-        if let Some(i) = (from..self.pads.len()).find(|&i| self.pads[i].is_empty()) {
+        // A pad with only audio clips on its track is a track, not a free pad.
+        if let Some(i) = (from..self.pads.len()).find(|&i| self.pads[i].is_empty() && self.arrangement.clips(i).is_empty()) {
             return Some(i);
         }
         self.add_bank().then(|| self.pads.len() - 16)

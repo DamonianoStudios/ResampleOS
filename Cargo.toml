@@ -1,6 +1,6 @@
 [package]
 name = "resampleos"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "A resample-first pad DAW: commit to audio, capture everything, resample it again."
 readme = "README.md"
@@ -24,7 +24,7 @@ symphonia = { version = "0.6.1", features = ["mp3", "flac", "wav", "ogg", "vorbi
 vst3-host = { version = "0.10.0", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_UI_HiDpi"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
@@ -36,6 +36,8 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+# egui's own debug checks trip on textured rects in debug builds (not in release).
+debug-assertions = false
 
 [profile.release]
 lto = "thin"

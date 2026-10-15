@@ -173,6 +173,12 @@ pub struct Shared {
     pub ui_capture_pads: AtomicBool,
     /// Perform mode: pad notes launch loops, so the MIDI thread leaves them to the UI.
     pub ui_perform: AtomicBool,
+    /// Where the input ring stood when the song playhead was where, at the start of the
+    /// last block played: (frame, song tick as f64 bits), with a counter that is odd while
+    /// they are being written. See [`Shared::song_anchor`].
+    pub anchor_seq: AtomicU64,
+    pub anchor_frame: AtomicU64,
+    pub anchor_tick: AtomicU64,
 }
 
 impl Shared {
@@ -206,6 +212,31 @@ impl Shared {
             ui_scale_mask: AtomicU32::new(0xfff),
             ui_capture_pads: AtomicBool::new(false),
             ui_perform: AtomicBool::new(false),
+            anchor_seq: AtomicU64::new(0),
+            anchor_frame: AtomicU64::new(0),
+            anchor_tick: AtomicU64::new(0),
+        }
+    }
+
+    /// From the audio thread: the input ring's frame and the song tick at the start of a
+    /// block.
+    pub fn set_song_anchor(&self, frame: u64, tick: f64) {
+        self.anchor_seq.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.anchor_frame.store(frame, std::sync::atomic::Ordering::Release);
+        self.anchor_tick.store(tick.to_bits(), std::sync::atomic::Ordering::Release);
+        self.anchor_seq.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+    }
+
+    /// The last (input frame, song tick) pair, read whole.
+    pub fn song_anchor(&self) -> (u64, f64) {
+        use std::sync::atomic::Ordering::Acquire;
+        loop {
+            let a = self.anchor_seq.load(Acquire);
+            let (f, t) = (self.anchor_frame.load(Acquire), self.anchor_tick.load(Acquire));
+            if a.is_multiple_of(2) && self.anchor_seq.load(Acquire) == a {
+                return (f, f64::from_bits(t));
+            }
+            std::hint::spin_loop();
         }
     }
 

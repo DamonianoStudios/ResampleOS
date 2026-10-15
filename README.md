@@ -19,6 +19,8 @@ ResampleOS is a pad-based DAW built around committing to audio. Linear DAWs make
 
 A short tour of the tabs: [demo-tour.gif](docs/images/demo-tour.gif).
 
+![The arrangement: the demo song, with loops as sections, clips per pad, and the recording and capture tools](docs/images/arrangement.png)
+
 > **Status: pre-release.** ResampleOS is developed and tested on Windows 11. It is written with cross-platform libraries, but it has not been built or run on macOS or Linux, and the plugin editor windows, icon embedding and UI font loading are Windows-specific today.
 
 ## What it does
@@ -31,12 +33,14 @@ A short tour of the tabs: [demo-tour.gif](docs/images/demo-tour.gif).
 - **Transient chop.** One key spreads a sample's slices across the next empty bank.
 - **Piano roll and step sequencer.** Scale-locked piano roll with a velocity lane and free microtiming; a step grid per bank for drum patterns; swing and humanize on top.
 - **Loops, chain and perform mode.** Up to sixteen loops of 1 to 16 bars over the same pads, switched on the beat, chained into an arrangement, or launched live from the pads.
-- **Arrangement.** A song timeline beside the pads, as long as the song needs: a track per pad, clips that play the pad's loops, sections that bring their loop's automation, a loop brace, and the chain written out as a song in one click. Exports to WAV.
+- **Arrangement.** A song timeline beside the pads, as long as the song needs: a track per pad; clips that play the pad's loops, notes of their own, or audio (locked to the timeline, with gain, fades, crossfades, takes, and stretching to follow the tempo); sections that bring their loop's automation, with names and colours of their own; song-length automation lanes; markers; inserting and deleting time; box select, and snapping that `Alt` turns off. The chain becomes a song in one click.
+- **Recording onto the song.** Armed tracks record the input or the notes played; loops launched while recording become sections; each pass round the loop brace is kept as a take. And everything played is remembered, so **Capture** puts the last bars of a jam onto the timeline after the fact.
+- **Consolidate, bake and export.** Render clips to one audio clip in place (`Ctrl+J`) or through their effects onto a new track; export the song (or the loop brace) to WAV.
 - **Automation.** Bus effects, levels and pans, pad volume, pan and cutoff, drum synth knobs and any plugin parameter can move through each loop: drawn in a lane with straight or curved segments, or recorded by turning the control (in ResampleOS or in a plugin's window) while the loop plays.
 - **Drum synth.** Five engines (kick, snare and clap, metallic, FM, modal) with eight macros each, velocity and random amounts per knob, knob values locked to individual steps, seven 16-pad kits, and one key to bake a hit into a sample that can always be turned back into the synth.
 - **Vocal takes.** A vocal pad records a take each time round the loop, with swipe comping, cut, move and slip editing, doubles, and baking to a pad or to a bank of phrases. A dedicated vocal bus has scale-locked pitch correction, levelling and a dub throw.
 - **Performance buses.** Four buses, a vocal bus and a master, three effect slots each: vinyl, cassette, 3-band EQ, DJ isolator and filter, bit-crush, compressor, tape delay, reverb. Buses can feed later buses and can be sidechained from one another.
-- **VST3 and CLAP hosting.** Instruments on pads, effects on buses and four analyzer slots that listen without touching the mix, with a scanner that copes with libraries of a thousand plugins or more.
+- **VST3 and CLAP hosting.** Instruments on pads, effects on buses and four analyzer slots that listen without touching the mix, with a scanner that copes with libraries of a thousand plugins or more. Plugin editors open in their own windows, scaled for high-DPI displays.
 - **External input**, **MIDI controllers**, **project-wide undo and redo**.
 
 ## Getting started

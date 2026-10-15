@@ -12,12 +12,15 @@ mod play;
 mod plugins;
 mod roll;
 mod scenes;
+mod song_audio;
+mod song_rec;
 mod state;
 mod vocal;
 
-pub use arrange::{ARR_SNAPS, ArrDrag, ArrangeUi, Arrangement, Clip, View};
+pub use arrange::{ARR_SNAPS, ArrDrag, ArrangeUi, Arrangement, Clip, OVERVIEW_STEP, View, db_to_gain, pos_text};
 pub use export::Depth;
-pub use automation::{AUTO_SNAPS, AutoUi};
+pub use song_audio::BounceTo;
+pub use automation::{AUTO_SNAPS, AutoScope, AutoUi};
 pub use drum::{DrumUi, MacroLayer};
 pub use history::History;
 pub use pads::PadAction;
@@ -74,6 +77,7 @@ pub struct App {
     pub browser: Browser,
     /// Open plugin editor windows, keyed by `PluginSlot::id`.
     editors: Vec<plugins::EditorWin>,
+    pub song_rec: song_rec::SongRec,
     /// Bus effect plugins, indexed `bus * 3 + slot`.
     pub fx_plugins: Vec<Option<PluginSlot>>,
     /// Analyzer plugins and the bus each watches.
@@ -218,6 +222,7 @@ impl App {
             catalog: Catalog::load(),
             browser: Browser { open: false, query: String::new(), filter: 0, target: PluginTarget::Pad(0) },
             editors: Vec::new(),
+            song_rec: Default::default(),
             fx_plugins: (0..NUM_BUSES * 3).map(|_| None).collect(),
             analyzers: (0..crate::shared::NUM_ANALYZERS).map(|_| (None, MASTER)).collect(),
             show_analyzers: false,
@@ -434,6 +439,8 @@ impl App {
         self.poll_scenes();
         self.vocal_poll();
         self.latency_poll();
+        self.poll_song_rec();
+        self.poll_warps();
         self.poll_arrangement();
         // Effects that follow the project key hear about a change of key.
         if self.key.mask() != self.sent_scale {
@@ -481,6 +488,12 @@ impl App {
                     }
                 }
                 JobResult::Shifted { key, pad, sample } => self.vocal_shift_done(key, pad, sample),
+                JobResult::SongAudio { pad, at, name, sample } => self.song_audio_loaded(pad, at, name, sample),
+                JobResult::Warped { source, file, bpm, mode, data } => self.warp_done(source, file, bpm, mode, data),
+                JobResult::Bounced { to, l, r, detached } => {
+                    self.export_done(&detached);
+                    self.bounce_done(to, l, r);
+                }
                 JobResult::Failed(e) => self.status = e,
                 JobResult::Exported { path, secs, peak, detached } => {
                     self.export_done(&detached);

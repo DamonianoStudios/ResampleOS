@@ -67,6 +67,26 @@ pub struct ClapEditor {
     open: bool,
 }
 
+/// Delivers the timer messages that are due on this thread. Windows only makes them when
+/// the queue is otherwise empty, and while an editor is open the app repaints every frame,
+/// so it never is: editors that draw from a timer (baseview's, used by Rust plugins such as
+/// LX Audiolabs') would never paint. Asking for timer messages alone makes the due ones.
+fn pump_timers() {
+    let mut msg: MSG = unsafe { std::mem::zeroed() };
+    for _ in 0..32 {
+        if unsafe { PeekMessageW(&mut msg, std::ptr::null_mut(), WM_TIMER, WM_TIMER, PM_REMOVE) } == 0 {
+            break;
+        }
+        unsafe { DispatchMessageW(&msg) };
+    }
+}
+
+/// How far the display is scaled (1.0 at 96 DPI).
+fn system_scale() -> f64 {
+    let dpi = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForSystem() };
+    if dpi == 0 { 1.0 } else { dpi as f64 / 96.0 }
+}
+
 /// The outer window size for a client area of `w` by `h`.
 fn outer(style: u32, w: u32, h: u32) -> (i32, i32) {
     let mut r = RECT { left: 0, top: 0, right: w as i32, bottom: h as i32 };
@@ -86,6 +106,13 @@ impl ClapEditor {
             }
             if !gui.create.is_some_and(|f| f(plugin, api, false)) {
                 return Err("the plugin could not create its editor".into());
+            }
+        }
+        // Windows editors work in physical pixels; the host says how far the display is
+        // scaled, before asking the size. (A plugin that answers false scales itself.)
+        unsafe {
+            if let Some(f) = gui.set_scale {
+                f(plugin, system_scale());
             }
         }
         let (mut w, mut h) = (640u32, 400u32);
@@ -160,6 +187,7 @@ impl ClapEditor {
         if !self.open {
             return;
         }
+        pump_timers();
         let Ok(p) = self.handle.try_lock() else { return };
         let Some(gui) = (unsafe { p.gui.as_ref() }) else { return };
         let plugin = p.raw();

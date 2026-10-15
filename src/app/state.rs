@@ -71,6 +71,12 @@ pub enum JobResult {
     /// A pitch-shifted copy of a vocal take, for a play-through lane on `pad`.
     Shifted { key: (usize, i32), pad: usize, sample: SampleData },
     Failed(String),
+    /// Clips rendered to audio (consolidate or bake), to put back where `to` says.
+    Bounced { to: crate::app::BounceTo, l: Vec<f32>, r: Vec<f32>, detached: Vec<PluginTarget> },
+    /// Recording `source` of the arrangement (saved as `file`) stretched to `bpm`.
+    Warped { source: usize, file: String, bpm: f32, mode: crate::stretch::WarpMode, data: SampleData },
+    /// A file decoded for the timeline: on `pad`'s track (or a new one) at tick `at`.
+    SongAudio { pad: Option<usize>, at: u64, name: String, sample: SampleData },
     /// A song export finished; the live engine takes back the plugins in `detached`.
     Exported { path: std::path::PathBuf, secs: f32, peak: f32, detached: Vec<PluginTarget> },
     ExportFailed { error: String, detached: Vec<PluginTarget> },

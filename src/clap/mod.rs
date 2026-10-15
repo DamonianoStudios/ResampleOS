@@ -32,7 +32,7 @@ use std::ffi::{CStr, CString, c_char, c_void};
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
 
 /// Most channels a port may have that we feed or read.
@@ -61,7 +61,11 @@ impl Drop for Library {
     }
 }
 
-static LIBRARIES: Mutex<Vec<(PathBuf, Weak<Library>)>> = Mutex::new(Vec::new());
+/// Every library opened, kept loaded until the app quits. Unloading one whose last
+/// instance has gone is allowed, but plugins that leave work running past `destroy` (a
+/// network thread, a timer) then crash the app from code that is no longer there, as
+/// LX Audiolabs' did; hosts commonly keep plugin libraries loaded for this reason.
+static LIBRARIES: Mutex<Vec<(PathBuf, Arc<Library>)>> = Mutex::new(Vec::new());
 
 /// What a scan finds of one plugin in a file.
 pub struct Descriptor {
@@ -78,9 +82,8 @@ fn text(p: *const c_char) -> String {
 impl Library {
     pub fn open(path: &Path) -> Result<Arc<Library>, String> {
         let mut libs = LIBRARIES.lock().map_err(|_| "plugin list poisoned".to_string())?;
-        libs.retain(|(_, w)| w.strong_count() > 0);
-        if let Some(lib) = libs.iter().find(|(p, _)| p == path).and_then(|(_, w)| w.upgrade()) {
-            return Ok(lib);
+        if let Some((_, lib)) = libs.iter().find(|(p, _)| p == path) {
+            return Ok(lib.clone());
         }
         let lib = unsafe { libloading::Library::new(path) }.map_err(|e| e.to_string())?;
         let entry = unsafe { lib.get::<*const clap_plugin_entry>(b"clap_entry\0") }.map_err(|_| "not a CLAP plugin (no clap_entry)".to_string())?;
@@ -99,7 +102,7 @@ impl Library {
             }
         }
         let lib = Arc::new(Library { entry, _lib: lib });
-        libs.push((path.to_path_buf(), Arc::downgrade(&lib)));
+        libs.push((path.to_path_buf(), lib.clone()));
         Ok(lib)
     }
 

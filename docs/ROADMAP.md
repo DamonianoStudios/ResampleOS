@@ -13,14 +13,14 @@ Nothing here is a promise of dates. Sizes are relative: **S** is a few days of w
 - Built-in sound sources: a drum synth with five engines and kits, four internal synths, a vocal recorder with swipe comping, doubles and pitch correction.
 - Mixing: four buses, a vocal bus and a master, each with three effect slots, sidechaining, built-in effects, VST3 and CLAP hosting, analyzer slots.
 - Automation per loop, with curves, on built-in controls, drum knobs and plugin parameters.
+- An arrangement (since 0.2, completed in 0.3): pattern, note and audio clips on a song timeline, recording onto it, capture of a performance after the fact, song-length automation, markers, consolidate and bake, and song export.
 - Tempo and key conform with three warp methods, and pitch detection.
 
 **What stops it being a full DAW today:**
 
 | Gap | Effect on the user |
 | --- | --- |
-| No timeline longer than 16 bars | A song exists only as a chain of loops; no fills, no one-off events, no long vocal or audio parts, no song-length automation |
-| No song export | The only way out is resampling or skip-back, or exporting one pad at a time |
+| No sample browser | Samples come in by dragging from Explorer or one file dialog at a time |
 | No MIDI file import or export | Work can't move to or from another DAW |
 | Fixed 4/4, one tempo | No time signature or tempo changes |
 | Windows shared-mode audio only (no ASIO, no exclusive mode) | Latency is too high for tracking through the app |
@@ -42,11 +42,11 @@ Nothing here is a promise of dates. Sizes are relative: **S** is a few days of w
 | Version | Theme | Headline |
 | --- | --- | --- |
 | 0.2 | Arrangement, part 1 | A song timeline per project; loops and patterns placed as clips; play from anywhere; the chain becomes a song in one click; song export |
-| 0.3 | Arrangement, part 2 | Audio clips, recording onto the timeline, performance capture, song-length automation, markers |
-| 0.4 | Mixer and export | Return tracks and sends, more buses and slots, stems, freeze, MIDI file import and export |
+| 0.3 | Arrangement, part 2 | Audio clips, recording onto the timeline, performance capture, song-length automation, markers (released in 0.3.0) |
+| 0.4 | Browser, mixer and export | A built-in sample browser (see [below](#sample-browser)), return tracks and sends, more buses and slots, stems, freeze, MIDI file import and export |
 | 0.5 | Pro audio | ASIO and exclusive-mode audio, plugin delay compensation, multi-core engine, plugin crash isolation, autosave |
 | 0.6 | Time and MIDI depth | Tempo and time-signature changes, CC, pitch-bend and MPE lanes, groove, chord and scale tools, MIDI out and sync |
-| 0.7 | Sound | Multisample sampler, a wavetable synth, better stock effects, a sample browser with preview and tagging |
+| 0.7 | Sound | Multisample sampler, a wavetable synth, better stock effects, tags and a stock library in the sample browser |
 | 0.8 | Control | MIDI learn everywhere, controller scripts (Launchpad, APC, Push, MPK), Ableton Link |
 | 1.0 | Release | macOS (and Linux) builds, signed installers, auto-update, onboarding, stability work |
 
@@ -155,18 +155,21 @@ Capture first is the part that makes this ResampleOS's own arrangement view rath
 
 Done when: a chain of loops becomes a song with one click, plays from any bar, can be lengthened and varied clip by clip, saves and reopens, undoes, and exports to a WAV identical (sample for sample) to what was heard.
 
-**0.3: Arrangement, part 2**
+**0.3: Arrangement, part 2** (released in 0.3.0; see [the release notes](releases/v0.3.0.md))
 
-| Work | Size |
-| --- | --- |
-| Audio clips: sample-locked playback, offsets, fades, gain, pre-rendered warp | L |
-| Recording onto the timeline (MIDI and audio), takes from loop-brace passes | L |
-| Record arrangement from loop launches and pad play | M |
-| Performance skip-back (event history) and Capture performance | M |
-| Song-length automation lanes; per-loop lanes carried in with sections | M |
-| Markers, section names and colours, insert and delete time | M |
-| Consolidate (`Ctrl+J`) and bake selection, using the resample engine | M |
-| Crossfades between adjacent audio clips | S |
+| Work | Size | Status |
+| --- | --- | --- |
+| Box select and select all on the timeline | S | Done |
+| Audio clips: sample-locked playback, offsets, fades, gain, pre-rendered warp | L | Done |
+| Recording onto the timeline (MIDI and audio), takes from loop-brace passes | L | Done: armed tracks record audio or notes; audio keeps a take per brace pass |
+| Record arrangement from loop launches and pad play | M | Done: launches become sections, armed pads' hits become clips |
+| Performance skip-back (event history) and Capture performance | M | Done: ten minutes of hits, loop passes and control moves |
+| Song-length automation lanes; per-loop lanes carried in with sections | M | Done |
+| Markers, section names and colours, insert and delete time | M | Done |
+| Consolidate (`Ctrl+J`) and bake selection, using the resample engine | M | Done |
+| Crossfades between adjacent audio clips | S | Done |
+
+Also in 0.3: clips with notes of their own (recorded or captured, not using up a loop), snapping on or off with `Alt` to place freely, and split at the pointer.
 
 Done when: a whole song with vocals, one-off fills and mix automation can be built and exported without touching the loop page after the first draft.
 
@@ -177,6 +180,69 @@ Done when: a whole song with vocals, one-off fills and mix automation can be bui
 - **Undo on long songs.** Comparing snapshots is cheap only while everything heavy is shared. Clip lists must be `Arc`-shared per track so an edit copies one track, not the song.
 - **Screen space.** The arrangement needs the width the pad matrix uses now. The split between timeline and inspector needs testing at 1080p.
 - **Linked versus unique patterns.** Live makes clips independent; ResampleOS's loops suggest linking. The plan links by default with a visible link badge and one-click make unique. This needs user testing.
+
+---
+
+## Sample browser
+
+### What it is
+
+A browser for the user's own sample folders, inside ResampleOS, so finding and auditioning sounds never means leaving the app or dragging from Explorer. It opens as a panel on the left of either view, **Pads** or **Arrange**, over the pad matrix or the track headers, and closes again with the same key (`F4`) or button.
+
+### Folders
+
+- **Sample folders** are set in Preferences: one or several (a library drive, a splice folder, a project's bounces), each with a name. They are remembered with the settings, not the project.
+- **Add folder…** in the browser itself, and right-click a folder to remove it, rename it or show it in Explorer.
+- Each folder is a tree; a **Recent** list shows the files used lately, and **Project** shows the files the open project uses.
+
+### Finding a sound
+
+- **Search** across every folder by name as you type, with filters for kind (one-shot or loop), tempo range, key and length.
+- **Analysis** runs in the background the first time a folder is seen and is cached (tempo, key, length, one-shot or loop, a waveform overview), using the analysis pads already run on load. The cache is a small file per folder in the settings folder, refreshed when files change.
+- **Favourites:** a star on any file; **Favourites** is a filter.
+- Results show name, length, tempo and key, and a waveform strip.
+
+### Auditioning
+
+- Click a file, or move through the list with the arrow keys, and it plays at once on a preview voice, outside the buses, at a preview level of its own.
+- **Sync** plays loops stretched to the project tempo (and optionally the key), starting on the next beat while the transport runs, using the same warp as conform. **Raw** plays them as they are.
+- Previews never touch the pads, the take stacks or undo.
+
+### Getting it into the project
+
+- **Pads view:** drag a file onto a pad (several files spill onto the next pads, as from Explorer); `Enter` loads the selected file onto the selected pad; `Shift+Enter` onto the next empty pad.
+- **Arrange view:** drag a file onto a track for an audio clip there, or onto empty space for a new track (as dropping from Explorer does now); `Enter` puts it at the insert marker on the selected track.
+- Drags show where the file will land before it is dropped. Conform on import applies as it does for any load.
+
+### Data model and engine
+
+```text
+Prefs
+  sample_folders: Vec<(name, path)>
+  favourites: Vec<path>
+BrowserCache (per folder, in the settings folder)
+  entries: Vec<(relative path, size, modified, length, tempo, key, kind, overview)>
+```
+
+The preview is a voice of its own in the engine, fed a decoded file over the command queue like a pad's sample and dropped through the garbage queue; it plays to the master after the master's effects, so it is heard without being processed. Decoding and stretching happen on a background thread so scrolling through a list never waits for a file.
+
+### Delivery in stages
+
+| Work | Size |
+| --- | --- |
+| Folders in Preferences, the panel in both views, tree and file list, search by name | M |
+| Preview voice, click and arrow-key audition, Raw and Sync preview | M |
+| Drag and `Enter` to pads, tracks and the timeline | S |
+| Background analysis with a per-folder cache; filters for kind, tempo, key and length | M |
+| Favourites, Recent and Project lists | S |
+
+Done when: with a library of 50,000 files in several folders, a user can find a kick by typing, hear ten of them in a few seconds with the arrow keys, and drag one onto a pad or the timeline without leaving the app or waiting.
+
+### Risks and open questions
+
+- **Large libraries.** The first scan of a big drive must not block anything; analysis runs at low priority and results appear as they come.
+- **Screen space.** The panel takes width from the pad matrix or the timeline; it needs to be resizable and to remember its width per view.
+- **Network and cloud folders** (OneDrive placeholders) may download a file just to read it; analysis should skip files that are not on the disk.
 
 ---
 
@@ -227,7 +293,7 @@ Each area lists what is missing, in priority order. **Priority** is relative to 
 | Multisample sampler (zones, velocity layers, round robin, loops) | Playing real instruments from samples | P2 | L |
 | Wavetable synth | The most expected modern synth type | P2 | L |
 | Stock effects: parametric EQ with analyser, glue and multiband compressors, limiter with true peak, algorithmic reverb, saturation, chorus and phaser | Mixing without third-party plugins | P2 | L |
-| Sample browser with preview at project tempo and key, favourites, tags and search | Finding sounds fast | P2 | M |
+| Sample browser with preview at project tempo and key, favourites and search (planned for 0.4, see [Sample browser](#sample-browser)); tags later | Finding sounds fast | P1 | M |
 | Stock library: kits, loops and presets | A new user can make music on day one | P3 | L |
 
 ### Recording

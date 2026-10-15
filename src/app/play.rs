@@ -108,11 +108,13 @@ impl App {
         }
         self.send(Cmd::PadOn { pad: pad as u16, vel, semis, key });
         self.record_on(pad, semis, vel, key);
+        self.perf_note_on(pad, semis, vel, key);
     }
 
     pub fn note_off(&mut self, pad: u16, key: u32) {
         self.send(Cmd::PadOff { pad, key });
         self.record_off(key);
+        self.perf_note_off(key);
     }
 
     pub fn select(&mut self, pad: usize) {

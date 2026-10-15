@@ -1,8 +1,9 @@
 //! The Automation tab: the lanes of the loop on screen, one row each, drawn over the loop's
-//! bars and beats.
+//! bars and beats. The song's lanes use the same rows, under the song timeline and lined up
+//! with it.
 
 use super::{theme, toggle};
-use crate::app::{AUTO_SNAPS, App, PluginTarget};
+use crate::app::{AUTO_SNAPS, App, AutoScope, PluginTarget};
 use crate::engine::{AutoPoint, AutoTarget, PadKind, bend};
 use crate::fx::FxKind;
 use crate::music::{PPQ, TICKS_PER_BAR};
@@ -15,6 +16,18 @@ const LANE_H: f32 = 72.0;
 const GRAB: f32 = 8.0;
 /// Most plugin parameters a menu lists at once; the filter narrows the rest.
 const PARAM_LIST_MAX: usize = 200;
+
+/// How a lane's ticks fall across the screen.
+pub struct LaneMap {
+    /// Width of the lane's header.
+    pub head_w: f32,
+    /// First tick in view and ticks per point; `None` fits the whole lane in the row.
+    pub view: Option<(f64, f64)>,
+    /// How long the lane runs, in ticks; points stay inside it.
+    pub len: u32,
+    /// The playhead, in the lane's ticks.
+    pub now: Option<f64>,
+}
 
 pub fn draw(app: &mut App, ui: &mut Ui) {
     let scene = &app.scenes[app.scene];
@@ -63,10 +76,16 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
         });
         return;
     }
+    let map = LaneMap { head_w: HEAD_W, view: None, len, now: app.lane_now(AutoScope::Loop) };
+    lane_list(app, ui, &map);
+}
+
+/// Every lane in the current scope, one row each, scrolling; a lane's Remove takes it out.
+fn lane_list(app: &mut App, ui: &mut Ui, map: &LaneMap) {
     let mut remove = None;
-    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+    egui::ScrollArea::vertical().id_salt("lanes").auto_shrink([false, false]).show(ui, |ui| {
         for i in 0..app.lanes().len() {
-            if lane_row(app, ui, i, len) {
+            if lane_row(app, ui, i, map) {
                 remove = Some(i);
             }
             ui.add_space(4.0);
@@ -81,10 +100,55 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// The song's lanes, under the song timeline: `view` is the timeline's first tick and
+/// ticks per point, and the lanes' grid starts at `grid_left`, as the timeline's does.
+pub fn song_lanes(app: &mut App, ui: &mut Ui, grid_left: f32, view: (f64, f64)) {
+    ui.horizontal(|ui| {
+        theme::title(ui, "SONG AUTOMATION", theme::AMBER);
+        if toggle(ui, app.auto.rec, "Rec", theme::RED)
+            .on_hover_text("While the song plays, turning an automatable control writes it into the song's lanes")
+            .clicked()
+        {
+            app.auto.rec ^= true;
+        }
+        ui.label("Snap").on_hover_text("Hold Alt to place points off the grid");
+        egui::ComboBox::from_id_salt("song_auto_snap").width(52.0).selected_text(AUTO_SNAPS[app.auto.snap].0).show_ui(ui, |ui| {
+            for (i, (name, _)) in AUTO_SNAPS.iter().enumerate() {
+                ui.selectable_value(&mut app.auto.snap, i, *name);
+            }
+        });
+        add_lane_menu(app, ui);
+        if let Some(target) = app.auto.touched {
+            let name = app.target_name(target);
+            if ui.button(format!("Automate {name}")).on_hover_text("The plugin control you moved last, in the plugin's own window").clicked() {
+                app.automate(target);
+            }
+        }
+        ui.label(
+            egui::RichText::new("plays over the loops' own lanes · click: add · drag: move · ring: bend · right-click: delete")
+                .small()
+                .color(theme::DIM),
+        );
+    });
+    ui.add_space(2.0);
+    if app.lanes().is_empty() {
+        ui.label(
+            egui::RichText::new("Nothing is automated across the song. Add a lane, or right-click a control and choose Automate while on the song view.")
+                .color(theme::DIM),
+        );
+        return;
+    }
+    // The lanes' grid (8 points inside the area, which starts 6 after the header) starts
+    // where the timeline's does.
+    let head_w = grid_left - ui.max_rect().left() - 14.0;
+    let map = LaneMap { head_w, view: Some(view), len: u32::MAX / 2, now: app.lane_now(AutoScope::Song) };
+    lane_list(app, ui, &map);
+}
+
 /// A menu of everything that can be automated: every bus's level, pan and effect controls,
 /// the selected pad's volume, pan, cutoff and drum knobs, and every loaded plugin's
 /// parameters.
-fn add_lane_menu(app: &mut App, ui: &mut Ui) {
+pub fn add_lane_menu(app: &mut App, ui: &mut Ui) {
     let mut pick = None;
     ui.menu_button("Add lane", |ui| {
         ui.set_min_width(180.0);
@@ -180,32 +244,34 @@ fn add_lane_menu(app: &mut App, ui: &mut Ui) {
 
 /// One lane: its name and value on the left, the curve to the right. Returns true if
 /// its delete button was pressed.
-fn lane_row(app: &mut App, ui: &mut Ui, i: usize, len: u32) -> bool {
+fn lane_row(app: &mut App, ui: &mut Ui, i: usize, map: &LaneMap) -> bool {
     let lane = app.lanes()[i].clone();
+    let len = map.len;
     let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), LANE_H), Sense::hover());
-    let head = Rect::from_min_size(row.min, vec2(HEAD_W, LANE_H));
+    let head = Rect::from_min_size(row.min, vec2(map.head_w, LANE_H));
     let area = Rect::from_min_max(Pos2::new(head.right() + 6.0, row.top()), row.max);
     let p = ui.painter_at(row);
+    let salt = map.view.is_some();
 
     // ---- Header.
     p.rect_filled(head, 6.0, theme::WELL);
     let name = app.target_name(lane.target);
-    let name_rect = Rect::from_min_size(head.left_top() + vec2(8.0, 6.0), vec2(HEAD_W - 16.0, 14.0));
+    let name_rect = Rect::from_min_size(head.left_top() + vec2(8.0, 6.0), vec2(map.head_w - 16.0, 14.0));
     p.with_clip_rect(name_rect).text(name_rect.left_top(), Align2::LEFT_TOP, &name, theme::bold(11.0), theme::TEXT);
-    ui.interact(name_rect, egui::Id::new(("auto_name", i)), Sense::hover()).on_hover_text(&name);
-    let now = app.playing().then(|| app.shared.tick().rem_euclid(len.max(1) as f64));
+    ui.interact(name_rect, egui::Id::new(("auto_name", salt, i)), Sense::hover()).on_hover_text(&name);
+    let now = map.now;
     let shown = now.and_then(|t| lane.value_at(t)).or_else(|| lane.points.first().map(|p| p.value));
     if let Some(v) = shown {
         p.text(head.left_top() + vec2(8.0, 24.0), Align2::LEFT_TOP, app.target_value_text(lane.target, v), FontId::monospace(11.0), theme::AMBER);
     }
     let mut delete = false;
     let mut clear = false;
-    let buttons = Rect::from_min_size(head.left_bottom() + vec2(6.0, -28.0), vec2(HEAD_W - 12.0, 24.0));
+    let buttons = Rect::from_min_size(head.left_bottom() + vec2(6.0, -28.0), vec2(map.head_w - 12.0, 24.0));
     ui.scope_builder(egui::UiBuilder::new().max_rect(buttons).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
         if ui.small_button("Flat").on_hover_text("Back to a single point at the control's value as set by hand").clicked() {
             clear = true;
         }
-        if ui.small_button("Remove").on_hover_text("Stop automating this control in this loop").clicked() {
+        if ui.small_button("Remove").on_hover_text("Stop automating this control here").clicked() {
             delete = true;
         }
     });
@@ -214,16 +280,20 @@ fn lane_row(app: &mut App, ui: &mut Ui, i: usize, len: u32) -> bool {
     p.rect_filled(area, 6.0, theme::WELL);
     p.rect_stroke(area, 6.0, Stroke::new(1.0, Color32::BLACK), StrokeKind::Inside);
     let screen = area.shrink2(vec2(8.0, 8.0));
-    let x_of = |tick: f32| screen.left() + tick / len.max(1) as f32 * screen.width();
+    let (first, per_pt) = map.view.unwrap_or((0.0, len.max(1) as f64 / screen.width().max(1.0) as f64));
+    let x_of = |tick: f32| screen.left() + ((tick as f64 - first) / per_pt) as f32;
     let y_of = |v: f32| screen.bottom() - v * screen.height();
-    let beat_px = PPQ as f32 / len.max(1) as f32 * screen.width();
-    for t in (0..=len).step_by(PPQ as usize) {
+    // Everything from here is drawn inside the lane, whatever is scrolled out of it.
+    let p = p.with_clip_rect(area);
+    let beat_px = (PPQ as f64 / per_pt) as f32;
+    let last = (first + screen.width() as f64 * per_pt).min(len as f64) as u32;
+    for t in ((first.max(0.0) as u32 / PPQ * PPQ)..=last).step_by(PPQ as usize) {
         let bar = t % TICKS_PER_BAR == 0;
         if !bar && beat_px < 8.0 {
             continue;
         }
         p.vline(x_of(t as f32), screen.y_range(), Stroke::new(1.0, if bar { theme::FAINT } else { Color32::from_rgb(30, 33, 37) }));
-        if bar && t < len {
+        if bar && t < len && beat_px * 4.0 >= 18.0 {
             p.text(Pos2::new(x_of(t as f32) + 3.0, area.top() + 1.0), Align2::LEFT_TOP, (t / TICKS_PER_BAR + 1).to_string(), FontId::proportional(9.0), theme::FAINT);
         }
     }
@@ -233,12 +303,12 @@ fn lane_row(app: &mut App, ui: &mut Ui, i: usize, len: u32) -> bool {
     p.hline(screen.x_range(), y_of(base), Stroke::new(1.0, theme::FAINT.gamma_multiply(0.6)));
 
     // ---- Editing. Points are picked before bend handles, and both before adding.
-    let resp = ui.interact(area, egui::Id::new(("auto_lane", i)), Sense::click_and_drag());
+    let resp = ui.interact(area, egui::Id::new(("auto_lane", salt, i)), Sense::click_and_drag());
     let alt = ui.input(|inp| inp.modifiers.alt);
     let step = if alt { 1 } else { AUTO_SNAPS[app.auto.snap].1.max(1) };
     let tick_at = |x: f32| {
-        let raw = ((x - screen.left()) / screen.width()).clamp(0.0, 1.0) * len as f32;
-        (((raw / step as f32).round() as u32) * step).min(len.saturating_sub(1))
+        let raw = (first + (x.clamp(screen.left(), screen.right()) - screen.left()) as f64 * per_pt).max(0.0);
+        (((raw / step as f64).round() as u32) * step).min(len.saturating_sub(1))
     };
     let value_at = |y: f32| ((screen.bottom() - y) / screen.height()).clamp(0.0, 1.0);
     let mut points = lane.points.clone();
@@ -424,11 +494,7 @@ pub fn mark_automated(p: &egui::Painter, rect: Rect, colour: Color32) {
 /// While the transport runs, a thin amber bar along the bottom of an automated control
 /// shows where automation has it now (the control itself shows where it was set by hand).
 fn show_automated_value(app: &App, p: &egui::Painter, rect: Rect, target: AutoTarget) {
-    if !app.playing() {
-        return;
-    }
-    let len = (app.scenes[app.scene].bars * TICKS_PER_BAR).max(1) as f64;
-    let tick = app.shared.tick().rem_euclid(len);
+    let Some(tick) = app.lane_now(app.auto_scope()) else { return };
     let Some(v) = app.lanes().iter().find(|l| l.target == target).and_then(|l| l.value_at(tick)) else { return };
     let bar = Rect::from_min_max(Pos2::new(rect.left() + 2.0, rect.bottom() - 2.0), Pos2::new(rect.right() - 2.0, rect.bottom()));
     p.rect_filled(bar, 1.0, Color32::from_black_alpha(160));

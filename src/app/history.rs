@@ -182,8 +182,7 @@ impl App {
         self.scenes = s.scenes;
         self.chain = s.chain;
         self.arrangement = s.arrangement;
-        self.arr.selected.clear();
-        self.arr.section = None;
+        self.arr.deselect();
         self.vocal_fx = s.vocal_fx;
         self.vocal.selected = None;
         self.chain_pos = 0;

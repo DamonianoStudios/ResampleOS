@@ -169,6 +169,7 @@ impl App {
                 }
                 Key::F1 => self.show_help ^= true,
                 Key::F3 => self.toggle_view(),
+                Key::F9 => self.toggle_song_rec(),
                 Key::F2 => self.open_browser(PluginTarget::Pad(self.selected)),
                 _ => {}
             }

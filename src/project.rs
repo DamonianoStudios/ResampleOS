@@ -229,12 +229,46 @@ struct ProjectFile {
     arrangement: Arrangement,
 }
 
+/// The recordings the arrangement's audio clips play, one WAV each under `song/`; files
+/// there that the project no longer has are removed.
+fn save_song_audio(app: &App, dir: &Path) -> Result<(), String> {
+    let folder = dir.join("song");
+    let pool = &app.arrangement.audio;
+    if pool.is_empty() && !folder.exists() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    for a in pool {
+        if let Some(data) = &a.data {
+            sample::save_wav(&folder.join(&a.file), data, app.shared.sample_rate)?;
+        }
+    }
+    if let Ok(entries) = std::fs::read_dir(&folder) {
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.ends_with(".wav") && !pool.iter().any(|a| a.file == name) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Reads the arrangement's recordings back from `song/`.
+fn load_song_audio(dir: &Path, arrangement: &mut Arrangement, rate: u32) -> Result<(), String> {
+    for a in arrangement.audio.iter_mut() {
+        let data = sample::load_file(&dir.join("song").join(&a.file), rate).map_err(|e| format!("{}: {e}", a.file))?;
+        *a = a.with_data(Arc::new(data));
+    }
+    Ok(())
+}
+
 pub fn save(app: &App, dir: &Path) -> Result<usize, String> {
     let samples = dir.join("samples");
     std::fs::create_dir_all(&samples).map_err(|e| e.to_string())?;
     let mut pads = Vec::new();
     for (index, p) in app.pads.iter().enumerate() {
-        if p.is_empty() && p.cfg == PadCfg::default() && p.pattern.notes.is_empty() {
+        if p.is_empty() && p.cfg == PadCfg::default() && p.pattern.notes.is_empty() && app.arrangement.clips(index).is_empty() {
             continue;
         }
         let label = pad_label(index);
@@ -286,6 +320,7 @@ pub fn save(app: &App, dir: &Path) -> Result<usize, String> {
             takes,
         });
     }
+    save_song_audio(app, dir)?;
     let count = pads.len();
     let file = ProjectFile {
         version: FILE_VERSION,
@@ -329,8 +364,9 @@ pub fn save(app: &App, dir: &Path) -> Result<usize, String> {
 
 pub fn load(app: &mut App, dir: &Path) -> Result<usize, String> {
     let json = std::fs::read_to_string(dir.join("project.json")).map_err(|e| e.to_string())?;
-    let file: ProjectFile = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let mut file: ProjectFile = serde_json::from_str(&json).map_err(|e| e.to_string())?;
     let rate = app.shared.sample_rate;
+    load_song_audio(dir, &mut file.arrangement, rate)?;
 
     // Decode everything first so a broken file leaves the current project untouched.
     let banks = file.banks.clamp(1, MAX_BANKS);
@@ -573,8 +609,9 @@ mod tests {
     #[ignore]
     fn render_project() {
         let dir = PathBuf::from(std::env::var("RENDER_PROJECT").expect("set RENDER_PROJECT"));
-        let file: ProjectFile = serde_json::from_str(&std::fs::read_to_string(dir.join("project.json")).unwrap()).unwrap();
+        let mut file: ProjectFile = serde_json::from_str(&std::fs::read_to_string(dir.join("project.json")).unwrap()).unwrap();
         let sr = 48000u32;
+        load_song_audio(&dir, &mut file.arrangement, sr).unwrap();
         let shared = Arc::new(Shared::new(sr, 30));
         let (mut tx, rx) = RingBuffer::new(8192);
         let (_tx2, rx2) = RingBuffer::new(8);
@@ -596,7 +633,7 @@ mod tests {
         send(Cmd::SetScale(file.key.mask()));
         if !file.arrangement.is_empty() {
             // Song mode: the arrangement, start to end, as export renders it.
-            use crate::engine::{ArrangementPlan, SongClip, SongCmd, SongSection, SongTrack};
+            use crate::engine::{ArrangementPlan, Pattern, SongAudio, SongClip, SongCmd, SongSection, SongTrack};
             let bar = crate::music::TICKS_PER_BAR as u64;
             let tracks = file
                 .arrangement
@@ -604,7 +641,23 @@ mod tests {
                 .iter()
                 .map(|(pad, clips)| SongTrack {
                     pad: *pad as u16,
-                    clips: clips.iter().map(|c| SongClip { start: c.start, len: c.len, offset: c.offset, pattern: Arc::new(file.scenes[c.scene].pattern(*pad)) }).collect(),
+                    clips: clips
+                        .iter()
+                        .map(|c| match c.audio {
+                            Some(src) => {
+                                let data = file.arrangement.audio[src].data.clone().unwrap();
+                                let audio = SongAudio { data, gain: crate::app::db_to_gain(c.gain_db), fade_in: c.fade_in, fade_out: c.fade_out, xin: 0, xout: 0 };
+                                SongClip { start: c.start, len: c.len, offset: c.offset, pattern: Arc::new(Pattern::default()), audio: Some(audio) }
+                            }
+                            None => {
+                                let pattern = match c.notes {
+                                    Some(n) => file.arrangement.patterns[n].clone(),
+                                    None => file.scenes[c.scene].pattern(*pad),
+                                };
+                                SongClip { start: c.start, len: c.len, offset: c.offset, pattern: Arc::new(pattern), audio: None }
+                            }
+                        })
+                        .collect(),
                 })
                 .collect();
             let sections = file
@@ -618,7 +671,7 @@ mod tests {
                     automation: (!file.scenes[s.scene].automation.is_empty()).then(|| Arc::new(file.scenes[s.scene].automation.clone())),
                 })
                 .collect();
-            send(Cmd::Song(SongCmd::Plan(Some(Arc::new(ArrangementPlan { tracks, sections })))));
+            send(Cmd::Song(SongCmd::Plan(Some(Arc::new(ArrangementPlan { tracks, sections, automation: (!file.arrangement.automation.is_empty()).then(|| Arc::new(file.arrangement.automation.clone())) })))));
             send(Cmd::Song(SongCmd::Mode(true)));
             send(Cmd::Play(true));
             let end = file.arrangement.end();

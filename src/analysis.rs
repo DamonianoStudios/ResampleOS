@@ -67,7 +67,6 @@ pub fn onset_envelope(mono: &[f32], sr: f32) -> Vec<f32> {
 }
 
 /// Transient positions in frames. `sensitivity` 0..1: higher finds more.
-#[cfg(test)]
 pub fn detect_onsets(mono: &[f32], sr: f32, sensitivity: f32) -> Vec<u32> {
     pick_onsets(&onset_envelope(mono, sr), mono, sr, sensitivity)
 }

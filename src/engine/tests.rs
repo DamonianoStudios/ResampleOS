@@ -763,8 +763,8 @@ fn an_analyzer_leaves_the_output_untouched() {
 fn song_plan(pad: u16, clips: &[(u64, u64)], sections: Vec<SongSection>) -> Arc<ArrangementPlan> {
     let bar = TICKS_PER_BAR as u64;
     let pattern = Arc::new(Pattern { len_ticks: TICKS_PER_BAR, notes: vec![Note::new(0, 120, 60, 127)] });
-    let clips = clips.iter().map(|&(s, l)| SongClip { start: s * bar, len: l * bar, offset: 0, pattern: pattern.clone() }).collect();
-    Arc::new(ArrangementPlan { tracks: vec![SongTrack { pad, clips }], sections })
+    let clips = clips.iter().map(|&(s, l)| SongClip { start: s * bar, len: l * bar, offset: 0, pattern: pattern.clone(), audio: None }).collect();
+    Arc::new(ArrangementPlan { tracks: vec![SongTrack { pad, clips }], sections, automation: None })
 }
 
 /// Peaks of each 480-frame slice of the left channel.
@@ -830,7 +830,7 @@ fn a_section_brings_its_loops_automation() {
     // Bar 2 is a section whose loop turns the pad right down.
     let quiet = lanes(AutoTarget::PadVol(0), &[(0, 0.0)]);
     let sections = vec![SongSection { start: bar, len: bar, loop_len: bar, automation: quiet }];
-    let _ = tx.push(Cmd::Song(SongCmd::Plan(Some(Arc::new(ArrangementPlan { tracks: vec![], sections })))));
+    let _ = tx.push(Cmd::Song(SongCmd::Plan(Some(Arc::new(ArrangementPlan { tracks: vec![], sections, automation: None })))));
     let _ = tx.push(Cmd::Song(SongCmd::Mode(true)));
     let _ = tx.push(Cmd::Play(true));
     let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 0.0, key: 1 });
@@ -838,4 +838,167 @@ fn a_section_brings_its_loops_automation() {
     assert!(s[100] > 0.2, "bar 1 plays at the pad's own level");
     assert!(s[300] < 1e-3, "bar 2 is silenced by its section's automation");
     assert!(s[500] > 0.2, "bar 3, outside the section, lets go again");
+}
+
+/// A plan with one audio clip on `pad`: `data` from `offset` ticks in, over `start, len`.
+fn audio_plan(pad: u16, data: Arc<SampleData>, (start, len, offset): (u64, u64, u64), fade_in: u64) -> Arc<ArrangementPlan> {
+    let audio = SongAudio { data, gain: 1.0, fade_in, fade_out: 0, xin: 0, xout: 0 };
+    let clip = SongClip { start, len, offset, pattern: Arc::new(Pattern::default()), audio: Some(audio) };
+    Arc::new(ArrangementPlan { tracks: vec![SongTrack { pad, clips: vec![clip] }], sections: vec![], automation: None })
+}
+
+/// Audio clips play their recording locked to the song clock: from where the clip is,
+/// from the right place in the recording wherever playback starts, and nowhere else.
+#[test]
+fn audio_clips_play_locked_to_the_song() {
+    let bar = TICKS_PER_BAR as u64;
+    // At 120 BPM a bar is 96000 frames. The recording is a bar long: its first half at
+    // 0.5, its second at 0.25, so the level says where in it the engine is reading.
+    let step: Vec<f32> = (0..96000).map(|i| if i < 48000 { 0.5 } else { 0.25 }).collect();
+    let data = Arc::new(SampleData::new(step.clone(), step));
+    let start = |plan: Arc<ArrangementPlan>, at: f64| {
+        let (e, mut tx, _) = rig();
+        let _ = tx.push(Cmd::SetBpm(120.0));
+        let _ = tx.push(Cmd::Song(SongCmd::Plan(Some(plan))));
+        let _ = tx.push(Cmd::Song(SongCmd::Mode(true)));
+        let _ = tx.push(Cmd::Song(SongCmd::Locate(at)));
+        let _ = tx.push(Cmd::Play(true));
+        (e, tx)
+    };
+
+    // On bar 2 only.
+    let (mut e, _tx) = start(audio_plan(0, data.clone(), (bar, bar, 0), 0), 0.0);
+    let s = slices(&run(&mut e, 96000 * 3));
+    let full = s[220];
+    assert!(full > 0.2, "the clip sounds: {full}");
+    assert!(peak(&s[..199]) < 1e-4, "nothing before the clip");
+    assert!(peak(&s[401..]) < 1e-4, "nothing after it");
+    assert!((s[320] / full - 0.5).abs() < 0.02, "the second half of the recording plays in the second half of the clip");
+
+    // Started half-way into the clip: it picks the recording up half-way, after a few
+    // milliseconds of fade-in, not from its start.
+    let (mut e, _tx) = start(audio_plan(0, data.clone(), (bar, bar, 0), 0), 1.5 * bar as f64);
+    let out = run(&mut e, 48000);
+    assert!(out[0].abs() < full * 0.05 && out[2 * 100].abs() < full * 0.5, "fades in from the jump");
+    let s = slices(&out);
+    assert!((s[10] / full - 0.5).abs() < 0.02, "reads from half-way in: {}", s[10] / full);
+
+    // A clip trimmed to start half-way into its recording.
+    let (mut e, _tx) = start(audio_plan(0, data.clone(), (0, bar / 2, bar / 2), 0), 0.0);
+    let s = slices(&run(&mut e, 96000));
+    assert!((s[50] / full - 0.5).abs() < 0.02, "the offset skips the first half");
+    assert!(peak(&s[101..]) < 1e-4, "and ends where the clip does");
+
+    // A fade-in half the clip long: a quarter of the way in, it is half way up.
+    let (mut e, _tx) = start(audio_plan(0, data.clone(), (0, bar, 0), bar / 2), 0.0);
+    let s = slices(&run(&mut e, 96000));
+    assert!((s[50] / full - 0.5).abs() < 0.1, "half way up the fade: {}", s[50] / full);
+    assert!((s[99] / full - 1.0).abs() < 0.02, "all the way up after it");
+
+    // Round a loop brace over the second half of the clip: only the quieter half plays.
+    let (mut e, mut tx) = start(audio_plan(0, data.clone(), (0, bar, 0), 0), 0.5 * bar as f64);
+    let _ = tx.push(Cmd::Song(SongCmd::Brace(Some((0.5 * bar as f64, bar as f64)))));
+    let s = slices(&run(&mut e, 96000 * 2));
+    assert!(s.iter().all(|v| *v < full * 0.55), "never reads outside the brace");
+    assert!(s.iter().filter(|v| (**v / full - 0.5).abs() < 0.02).count() > 350, "and keeps playing round it");
+
+    // Stopping fades out rather than cutting.
+    let (mut e, mut tx) = start(audio_plan(0, data, (0, bar, 0), 0), 0.0);
+    run(&mut e, 4800);
+    let _ = tx.push(Cmd::Play(false));
+    let out = run(&mut e, 4800);
+    let l: Vec<f32> = out.iter().step_by(2).copied().collect();
+    assert!(l[0] > full * 0.8 && l[100] < l[0] && l[400] < 1e-4, "fades over a few milliseconds on stop");
+}
+
+/// An audio clip's recording comes out on the exact frame song time says it should.
+#[test]
+fn audio_clips_are_sample_accurate() {
+    let bar = TICKS_PER_BAR as u64;
+    let mut click = vec![0f32; 96000];
+    click[1000] = 0.8;
+    let data = Arc::new(SampleData::new(click.clone(), click));
+    let (mut e, mut tx, _) = rig();
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    // From half a bar into the song, a quarter of a bar into the recording.
+    let _ = tx.push(Cmd::Song(SongCmd::Plan(Some(audio_plan(0, data, (bar / 2, bar / 2, bar / 4), 0)))));
+    let _ = tx.push(Cmd::Song(SongCmd::Mode(true)));
+    let _ = tx.push(Cmd::Play(true));
+    // The click sits a quarter of a bar (24000 frames) before where the clip starts
+    // reading, so it is skipped.
+    let out = run(&mut e, 96000);
+    assert!(peak(&out) < 1e-4, "the click before the offset is not played");
+
+    // One past the offset is heard exactly where song time puts it.
+
+    let mut click = vec![0f32; 96000];
+    click[24000 + 1000] = 0.8;
+    let data = Arc::new(SampleData::new(click.clone(), click));
+    let (mut e, mut tx, _) = rig();
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    let _ = tx.push(Cmd::Song(SongCmd::Plan(Some(audio_plan(0, data, (bar / 2, bar / 2, bar / 4), 0)))));
+    let _ = tx.push(Cmd::Song(SongCmd::Mode(true)));
+    let _ = tx.push(Cmd::Play(true));
+    let l: Vec<f32> = run(&mut e, 96000).iter().step_by(2).copied().collect();
+    let at = l.iter().enumerate().max_by(|a, b| a.1.abs().total_cmp(&b.1.abs())).map(|(i, _)| i).unwrap();
+    assert_eq!(at, 48000 + 1000, "the click lands where song time puts it");
+}
+
+/// Song lanes run in song time, over the sections' loop lanes: where both move a control,
+/// the song's lane has the last word.
+#[test]
+fn song_lanes_play_over_the_sections() {
+    let (mut e, mut tx, _) = rig();
+    let _ = tx.push(Cmd::SetPadCfg { pad: 0, cfg: PadCfg { mode: PlayMode::Loop, ..PadCfg::default() } });
+    let flat = Arc::new(SampleData::new(vec![0.5; 4800], vec![0.5; 4800]));
+    let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(flat) });
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    let bar = TICKS_PER_BAR;
+    // The section over bars 1 to 3 holds the pad at full volume; the song's lane holds it
+    // there for a bar, then turns it right down for bar 2, then back up.
+    let loud = lanes(AutoTarget::PadVol(0), &[(0, 1.0)]);
+    let sections = vec![SongSection { start: 0, len: 3 * bar as u64, loop_len: bar as u64, automation: loud }];
+    let song = lanes(AutoTarget::PadVol(0), &[(bar - 1, 1.0), (bar, 0.0), (2 * bar - 1, 0.0), (2 * bar, 1.0)]);
+    let plan = ArrangementPlan { tracks: vec![], sections, automation: song };
+    let _ = tx.push(Cmd::Song(SongCmd::Plan(Some(Arc::new(plan)))));
+    let _ = tx.push(Cmd::Song(SongCmd::Mode(true)));
+    let _ = tx.push(Cmd::Play(true));
+    let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 0.0, key: 1 });
+    let s = slices(&run(&mut e, 96000 * 3));
+    assert!(s[100] > 0.2, "bar 1: up");
+    assert!(s[300] < 1e-3, "bar 2: the song's lane turns it down, over the section's");
+    assert!(s[500] > 0.2, "bar 3: up again");
+}
+
+/// Two audio clips back to back: without a crossfade each fades a few milliseconds at the
+/// join; with one, each plays on under the other with equal-power curves, so a steady
+/// sound runs through the join at full level.
+#[test]
+fn a_crossfade_carries_a_steady_sound_through_the_join() {
+    let bar = TICKS_PER_BAR as u64;
+    let flat = Arc::new(SampleData::new(vec![0.5; 192000], vec![0.5; 192000]));
+    let render = |x: u64| {
+        let (mut e, mut tx, _) = rig();
+        let _ = tx.push(Cmd::SetBpm(120.0));
+        let clip = |start: u64, offset: u64, xin: u64, xout: u64| SongClip {
+            start,
+            len: bar,
+            offset,
+            pattern: Arc::new(Pattern::default()),
+            audio: Some(SongAudio { data: flat.clone(), gain: 1.0, fade_in: 0, fade_out: 0, xin, xout }),
+        };
+        let clips = vec![clip(0, 0, 0, x), clip(bar, bar / 2, x, 0)];
+        let plan = ArrangementPlan { tracks: vec![SongTrack { pad: 0, clips }], sections: vec![], automation: None };
+        let _ = tx.push(Cmd::Song(SongCmd::Plan(Some(Arc::new(plan)))));
+        let _ = tx.push(Cmd::Song(SongCmd::Mode(true)));
+        let _ = tx.push(Cmd::Play(true));
+        run(&mut e, 96000 * 2).iter().step_by(2).copied().collect::<Vec<f32>>()
+    };
+    let plain = render(0);
+    let full = plain[48000];
+    let join = |l: &[f32]| l[96000 - 3000..96000 + 3000].iter().fold(f32::MAX, |m, v| m.min(v.abs()));
+    assert!(join(&plain) < full * 0.1, "without a crossfade the join dips");
+    let faded = render(bar / 8);
+    assert!(join(&faded) > full * 0.95, "with one it holds: {} of {full}", join(&faded));
+    assert!((faded[48000] - full).abs() < 1e-4 && (faded[144000] - full).abs() < 1e-4);
 }

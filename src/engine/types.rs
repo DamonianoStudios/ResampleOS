@@ -416,12 +416,28 @@ pub struct SceneSwap {
 }
 
 /// One clip as the engine plays it: a stretch of song time playing a pattern, repeated
-/// to fill it, starting `offset` ticks into the pattern.
+/// to fill it, starting `offset` ticks into the pattern; or, for an audio clip, a stretch
+/// of a recording, `offset` ticks into it (the pattern is then empty).
 pub struct SongClip {
     pub start: u64,
     pub len: u64,
     pub offset: u64,
     pub pattern: Arc<Pattern>,
+    pub audio: Option<SongAudio>,
+}
+
+/// What an audio clip plays: a recording at the engine's rate, locked to song time.
+pub struct SongAudio {
+    pub data: Arc<SampleData>,
+    /// Linear gain.
+    pub gain: f32,
+    /// Fades, in ticks from each end of the clip.
+    pub fade_in: u64,
+    pub fade_out: u64,
+    /// Crossfades with the audio clip before and after, in ticks: half of each is
+    /// played past the clip's edge, under the other clip, with equal-power curves.
+    pub xin: u64,
+    pub xout: u64,
 }
 
 impl SongClip {
@@ -451,6 +467,8 @@ pub struct ArrangementPlan {
     pub tracks: Vec<SongTrack>,
     /// In order of start.
     pub sections: Vec<SongSection>,
+    /// Song-length lanes, in song ticks, over whatever the sections' loops automate.
+    pub automation: Option<Automation>,
 }
 
 pub enum SongCmd {

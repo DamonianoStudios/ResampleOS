@@ -218,6 +218,8 @@ Loops are where parts are made; the **arrangement** is where they become a song,
 
 - **Each pad is a track.** Every pad that plays in any loop gets one, with its name, kind, and mute and solo (the pad's own, so they act in the loops too). Clicking the name selects the pad, so the buses and, back on the pads, the inspector follow it.
 - **A clip plays one of the pad's loops.** It plays that loop's pattern for the pad, round and round to fill the clip, from wherever its start has been trimmed to. Edit the loop's pattern and every clip playing it changes with it.
+- **An audio clip plays a recording**, locked to the timeline: a vocal, a sample, a bounce, a whole stem. It plays through its track's pad (its volume, pan, mute, solo and bus) and starts in the right place wherever playback starts.
+- **A clip can have notes of its own**: what you record or capture onto the timeline. It plays like a loop's clip, without using up one of the sixteen loops; **Open as a loop** (or double-click) makes the notes a loop to edit in the piano roll.
 - **The LOOPS lane** above the tracks shows which loop each stretch of the song came from. A section also plays its loop's automation, so a filter sweep drawn in a loop happens wherever that loop is in the song.
 
 **Building a song**
@@ -226,16 +228,51 @@ Loops are where parts are made; the **arrangement** is where they become a song,
 - **Put loop** puts any loop in at the insert marker, over whatever is there.
 - **Double-click** an empty stretch of a track to add a clip of the loop on screen (or the first loop the pad plays in), one loop long.
 - **Drag** a clip to move it (the selection moves together; `Shift`+click adds to it). **Drag an edge** to trim it: trimming the start keeps the pattern where it was in time, so a clip can start part-way into its loop. Anything a clip is dropped on is cut back to make room.
-- `Ctrl+D` duplicates the selection after itself, `Ctrl+E` splits clips at the insert marker (the selected ones, or every clip under it), `Del` deletes.
+- **Drag across empty space** to draw a box: every clip and section it touches is selected (`Shift` adds to the selection). `Ctrl+A` selects the whole song, so `Ctrl+A` then `Del` clears the arrangement; `Ctrl+Z` brings it back.
+- **Snap** in the toolbar puts clips, edges, markers and the insert marker on the grid chosen beside it (a bar, a beat, down to 1/32). Turn it off to place things anywhere, or hold `Alt` while dragging or clicking to place one thing off the grid.
+- `Ctrl+D` duplicates the selection after itself, `Ctrl+E` splits clips at the insert marker (the selected ones, or every clip under it), `Del` deletes. **Split here** in a clip's right-click menu splits it where you clicked, on the grid (or anywhere, with `Alt`). A selected section is deleted with every clip inside it.
 - **Right-click a clip** to open its loop, switch it to another loop, make it unique, duplicate, split or delete it.
 - **Make unique** copies the clip's loop into a new loop and points the selected clips at it, so they can be edited without changing the rest of the song. A project holds up to sixteen loops.
 - **Double-click a clip** to open its loop on the pads, with that pad selected, in the piano roll or step sequencer.
-- **Sections** move with their clips: drag one in the LOOPS lane, or right-click it to duplicate or delete it with everything in it. Double-click a section to open its loop.
+- **Sections** move with their clips: drag one in the LOOPS lane, or right-click it to duplicate or delete it with everything in it (`Shift`+click picks several). Double-click a section to open its loop. Right-click a section to give it a **name** and a **colour** of its own (a "Chorus 2" that plays the Chorus loop); **Loop's** goes back to the loop's colour.
+- **Consolidate** (`Ctrl+J`, or a clip's right-click menu) renders the selected clips of one track into one audio clip in their place, as the pad sounds on its own, before its bus: the new clip plays back through the pad just as they did. **Bake to a new track** renders selected clips from any tracks through their buses and effects (not the master's) onto a new track, tails included, and takes them away. Undo brings them back.
+
+**Audio clips**
+
+- **Drop audio files on the timeline**: on a track, and the first lands there, where it was dropped; anywhere else, and each gets a new track (an unused pad, named after the file). **Import audio…** in the toolbar does the same from a file dialog, at the insert marker.
+- **Right-click an empty stretch of a track** to import a file there, or to put the pad's own sample there as an audio clip.
+- Audio clips move, trim, split, duplicate and delete as pattern clips do. A trimmed start keeps the recording where it was in time, and a clip can't be stretched past either end of its recording.
+- **Right-click an audio clip** for its **Gain** and its **Fade in** and **Fade out**, in beats. The fades are drawn on the clip. Every clip edge gets a few milliseconds of fade anyway, so cuts never click.
+- **Crossfades.** When an audio clip starts where another ends, its menu has a **Crossfade**: both play on under each other for that long, with equal-power curves, so a join in a vocal or a sustained sound is smooth.
+- **Follow the tempo.** A recording is at the tempo it was brought in at, and follows the project's: change the tempo and it is stretched to match in the background (by Elastic, Beats or Varispeed, as for pads), playing as it was until the stretch is ready. In the clip's menu, **Recorded at** says the recording's own tempo (set it for a loop made at another tempo), and **Follow the tempo** off leaves it at its own speed.
+- **Takes.** A recording made round the loop brace keeps every pass; **Takes** in the clip's menu switches between them.
+- The recordings are saved in the project folder, under `song/`.
+
+**Song automation**
+
+**Automation** in the toolbar opens the song's own lanes under the timeline, lined up with it. They work like a loop's lanes (see [Automation](#automation)), but run the length of the song and play over whatever the sections' loops automate: where both move a control, the song's lane wins. Right-click a control and choose **Automate** while on the Song view to give it a song lane; with **Rec** on in the lanes' header, moving a control while the song plays writes into the song's lanes.
+
+**Recording**
+
+- **Arm a track** with **R** on its header. An armed vocal track, or an audio track with no sample, records the input (choose it under **Input** at the bottom); any other armed track records the notes played on its pad. **New recording track** (right-click empty timeline) makes an empty track and arms it.
+- **● Rec** in the toolbar (`F9`) records while the transport runs. Play the song (or press play with Rec on) and perform; when you stop, or turn Rec off, what was recorded is laid on the timeline where it was played: audio as audio clips (moved earlier by the measured input latency), notes as clips with notes of their own.
+- **Round the loop brace**, each pass of audio is kept as a take: the last whole pass plays, and **Takes** in its menu switches to another. Notes from every pass are merged, as an overdub.
+- **Recording the arrangement from the loops.** With Rec on, loops launched (from the pads, perform mode or a controller, including over the song) are written in as sections, each where it played, with its pads' clips.
+
+**Capture performance**
+
+Everything played while the transport runs is remembered for ten minutes, Rec or not: loops launched, pads hit and automatable controls moved, each at its place in the song. **Capture** in the toolbar puts the last 4 to 64 bars of it on the timeline after the fact, where it was played: loops as sections, hits as clips of notes, control moves as song automation. Jam on the pads, then keep the good part.
+
+**Markers and time**
+
+- **Right-click the ruler** to add a marker, insert a bar, or delete a bar. Everything after an inserted bar moves later, and a clip or section across it is split; deleting a bar takes out what is in it and closes the gap. Song automation and markers move with the rest.
+- With a loop brace set, the same menu inserts a gap as long as the brace at its start, or deletes the time under it.
+- **Markers** sit along the top of the ruler: click one to go there, drag it to move it, right-click it to rename or delete it.
 
 **Playing**
 
 - Press play in the Song view to play the song from the **insert marker** (the white triangle). Click the ruler to move it (and the playhead, while playing); click an empty stretch of a track to move it while stopped. `Home` goes back to the start.
-- **Loop** plays round the loop brace: drag across the thin strip above the ruler to set it, click the strip to turn it on and off.
+- **Loop** plays round the loop brace: drag across the thin strip above the ruler to set it, click the strip to turn it on and off. Audio clips go round with it.
 - **Follow** keeps the playhead in view. `Ctrl`+scroll zooms around the pointer, `Shift`+scroll moves along the song, and scroll moves up and down the tracks.
 - Pads stay playable over the song. Launching a loop while the song plays takes over from it at once; **Back to arrangement** picks the song up again where it would have been.
 - Press play in the Pads view and the loops play as before.
@@ -284,7 +321,7 @@ The SC button is lit purple when ducking and green when swelling.
 
 ## Automation
 
-Automation moves a control through a loop: a filter opening over the intro, an echo thrown on the last beat, the master fading at the end. Each loop has its own automation, which switches with the loop on the beat.
+Automation moves a control through a loop: a filter opening over the intro, an echo thrown on the last beat, the master fading at the end. Each loop has its own automation, which switches with the loop on the beat. The song has lanes of its own too, under the song timeline (see [Song automation](#the-arrangement)); on the Song view, **Automate** adds a lane there.
 
 These can be automated: every built-in effect knob and EQ slider on the buses, a plugin slot's Mix, each bus's level and pan, each pad's volume, pan and filter cutoff, the eight knobs of a drum pad, and the parameters of every loaded plugin (instrument or effect, VST3 or CLAP).
 
