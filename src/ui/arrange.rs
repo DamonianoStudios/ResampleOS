@@ -184,6 +184,17 @@ fn toolbar(app: &mut App, ui: &mut Ui) {
         {
             app.export_song_dialog();
         }
+        ui.menu_button("Stems", |ui| {
+            ui.label(egui::RichText::new("One WAV per part, before the master's effects").small().color(theme::DIM));
+            if ui.button("By track…").on_hover_text("Each pad that plays in the song, through its bus").clicked() {
+                app.export_stems_dialog(false);
+                ui.close();
+            }
+            if ui.button("By bus…").on_hover_text("Each bus, with the pads routed to it").clicked() {
+                app.export_stems_dialog(true);
+                ui.close();
+            }
+        });
         egui::ComboBox::from_id_salt("export_depth").width(84.0).selected_text(app.export_depth.name()).show_ui(ui, |ui| {
             for d in crate::app::Depth::ALL {
                 ui.selectable_value(&mut app.export_depth, d, d.name());
@@ -730,11 +741,28 @@ fn track_head(app: &mut App, ui: &mut Ui, painter: &egui::Painter, r: Rect, pad:
     let galley = elided(painter, &name, FontId::proportional(11.0), theme::DIM, name_w);
     let cut = galley.size().x + 0.5 < painter.layout_no_wrap(name.clone(), FontId::proportional(11.0), theme::DIM).size().x;
     painter.galley(Pos2::new(name_left, r.top() + 5.0), galley, theme::DIM);
-    painter.text(r.left_bottom() + vec2(8.0, -4.0), Align2::LEFT_BOTTOM, kind, FontId::proportional(9.0), theme::FAINT);
+    let frozen = app.arrangement.is_frozen(pad);
+    if frozen {
+        painter.text(r.left_bottom() + vec2(8.0, -4.0), Align2::LEFT_BOTTOM, format!("{kind} · frozen"), FontId::proportional(9.0), theme::CYAN);
+    } else {
+        painter.text(r.left_bottom() + vec2(8.0, -4.0), Align2::LEFT_BOTTOM, kind, FontId::proportional(9.0), theme::FAINT);
+    }
     let hit = ui.interact(Rect::from_min_max(r.min, Pos2::new(buttons_left - 2.0, r.bottom())).intersect(painter.clip_rect()), egui::Id::new(("arr_head", pad)), Sense::click());
     if hit.clicked() {
         app.select(pad);
     }
+    hit.context_menu(|ui| {
+        ui.label(egui::RichText::new(format!("{label} {name}")).small().color(theme::DIM));
+        if frozen {
+            if ui.button("Unfreeze").on_hover_text("Puts the track's clips back and switches its plugin on").clicked() {
+                app.unfreeze_track(pad);
+                ui.close();
+            }
+        } else if ui.button("Freeze").on_hover_text("Renders the track's clips to audio and switches its instrument plugin off, to spare the processor").clicked() {
+            app.freeze_track(pad);
+            ui.close();
+        }
+    });
     if cut {
         hit.on_hover_text(&name);
     }

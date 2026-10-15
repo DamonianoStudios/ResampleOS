@@ -5,6 +5,7 @@ This guide walks through the app in the order you are likely to meet it. For a k
 - [The screen](#the-screen)
 - [Pads and banks](#pads-and-banks)
 - [Working with samples](#working-with-samples)
+- [The sample browser](#the-sample-browser)
 - [Key and tempo conform](#key-and-tempo-conform)
 - [Capturing audio](#capturing-audio)
 - [Sequencing](#sequencing)
@@ -104,6 +105,18 @@ The **Mod / Warp** tab has three panels.
 | Elastic | A phase vocoder: each partial keeps its own frequency, so pitch and length change independently and smoothly. Hits keep their attack when **Lock transients** is on. **Keep formants** holds the vowel and body of a voice or instrument in place while the pitch moves, so a shifted voice doesn't sound chipmunked or giant | Most material, and anything tonal: chords, pads, vocals, bass |
 | Beats | Splices the sound between hits, overlapping pieces where they match best | Drum loops you want to keep crisp and gritty; tonal parts may warble |
 | Varispeed | Changes the speed, as tape does: faster is higher and shorter, slower is lower and longer. The Shift and Length fields move together (+12 st is 50 %) | The sound of a record sped up or slowed down, with no processing artefacts |
+
+## The sample browser
+
+**Samples** in the top bar (or `F4`) opens a browser for your own sample folders down the left of the screen, beside the pads or the song timeline.
+
+- **Add folder…** adds a folder of samples; add as many as you like. They are remembered with the settings, and listed in the background when the browser first opens (**…** beside the folder lists it again after you add files, or removes it from the browser; the files are never touched).
+- Pick a folder from the list and click through its subfolders; the path above the list takes you back up.
+- **Search** finds files by name in every folder at once, by every word you type.
+- **★** beside a file makes it a favourite; **Favourites** lists them, and **Recent** the files you used lately.
+- **Click** a file to hear it (with **Audition** on, at the level beside it). The `Up` and `Down` arrows move through the list, playing each in turn. Auditions are not processed, captured by skip-back or resampled.
+- **Drag** a file onto a pad, or onto the song timeline (a track, or empty space for a new track). **Double-click** or `Enter` puts it on the selected pad, or on the timeline at the insert marker in the song view; `Shift+Enter` puts it on the next empty pad.
+- MIDI files (shown in blue) can be dragged in the same way: onto pads as patterns, or onto the timeline as clips of notes.
 
 ## Key and tempo conform
 
@@ -280,6 +293,12 @@ Everything played while the transport runs is remembered for ten minutes, Rec or
 **Exporting**
 
 **Export song…** renders the song from start to end (or the loop brace, when it is on) to a WAV file, in 24-bit, 16-bit (dithered) or 32-bit float, with the tails of the last notes and effects. The export runs through the same engine as playback, faster than real time, so the file is what you heard. Hosted plugins are lent to the export while it runs, so playback waits until it is done.
+
+**Stems** exports one WAV per part into a folder you choose, one after another: **By track** (each pad that plays in the song, through its bus and effects) or **By bus** (each bus with the pads routed to it). Stems leave out the master's effects, so together they make the mix before the master.
+
+**Freeze.** Right-click a track's header and choose **Freeze** to render its clips into audio and switch its instrument plugin off, sparing the processor while the rest of the song is worked on. The header says **frozen**; **Unfreeze** puts the clips back and the plugin on. Undo works across both.
+
+**MIDI files.** **File > Import MIDI file…** brings a MIDI file in: onto the selected pad and those after it (each part a pad's pattern, up to sixteen bars) or, in the song view, onto the timeline (each part a clip of notes, as long as it runs). MIDI files can also be dropped on pads, the timeline or from the sample browser. **Export selected pad as MIDI…** writes a pad's pattern; **Export song as MIDI…** writes every track's notes over the whole song, a track per pad.
 
 A project with a song opens on the Song view.
 

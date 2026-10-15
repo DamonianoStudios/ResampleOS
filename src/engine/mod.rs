@@ -155,6 +155,10 @@ pub struct Engine {
     /// The latency test signal, and how much of it has played (`usize::MAX`: idle).
     ping: Vec<f32>,
     ping_pos: usize,
+    /// A file auditioned from the sample browser, how far it has played, and its gain.
+    preview: Option<Arc<SampleData>>,
+    preview_pos: usize,
+    preview_gain: f32,
     click_at: i64,
 
     roll_on: bool,
@@ -262,6 +266,9 @@ impl Engine {
             click_freq: 1000.0,
             ping: crate::latency::ping(sr),
             ping_pos: usize::MAX,
+            preview: None,
+            preview_pos: 0,
+            preview_gain: 1.0,
             click_at: -1,
             roll_on: false,
             roll_ticks: PPQ / 4,
@@ -692,6 +699,13 @@ impl Engine {
                 self.roll_ticks = ticks.max(10);
             }
             Cmd::Ping => self.ping_pos = 0,
+            Cmd::Preview(s, gain) => {
+                if let Some(old) = std::mem::replace(&mut self.preview, s) {
+                    self.trash(Garbage::Sample(old));
+                }
+                self.preview_pos = 0;
+                self.preview_gain = gain;
+            }
             Cmd::Panic => {
                 for v in self.voices.iter_mut() {
                     v.killed = true;

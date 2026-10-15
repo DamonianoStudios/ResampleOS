@@ -50,6 +50,7 @@ impl Engine {
         self.capture_and_meter(n);
         self.metronome(n);
         self.play_ping(n);
+        self.play_preview(n);
         self.samples_run += n as u64;
     }
 
@@ -608,6 +609,30 @@ impl Engine {
             *r += s;
         }
         self.ping_pos += k;
+    }
+
+    /// The sample browser's audition, straight to the output after everything else, with a
+    /// short fade at its end so a cut-off file doesn't click.
+    fn play_preview(&mut self, n: usize) {
+        let Some(s) = &self.preview else { return };
+        let len = s.len();
+        if self.preview_pos >= len {
+            if let Some(old) = self.preview.take() {
+                self.trash(Garbage::Sample(old));
+            }
+            return;
+        }
+        let k = n.min(len - self.preview_pos);
+        let fade = (self.sr * 0.005) as usize;
+        let [l, r] = &mut self.bufs[MASTER];
+        for i in 0..k {
+            let at = self.preview_pos + i;
+            let edge = ((len - at) as f32 / fade.max(1) as f32).min(1.0);
+            let g = self.preview_gain * edge;
+            l[i] += s.l[at] * g;
+            r[i] += s.r[at] * g;
+        }
+        self.preview_pos += k;
     }
 
     fn metronome(&mut self, n: usize) {

@@ -11,6 +11,7 @@ mod modwarp;
 mod pads;
 mod prefs;
 mod roll;
+mod samples;
 mod scenes;
 mod steps;
 pub mod theme;
@@ -39,6 +40,18 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
 
     // Files dropped from the OS land on the pad under the cursor, spilling onto the next pads.
     let dropped = ctx.input(|i| i.raw.dropped_files.clone());
+    // MIDI files become patterns (on the pads) or clips of notes (on the timeline).
+    let (midi, dropped): (Vec<_>, Vec<_>) = dropped.into_iter().partition(|f| crate::app::is_midi(f.path()));
+    for f in &midi {
+        if app.view == crate::app::View::Arrange {
+            let (pad, at) = app.arr.drop_at.unwrap_or((None, app.arr.cursor));
+            app.import_midi_to_song(f.path(), pad, at);
+        } else {
+            let at = ctx.pointer_hover_pos().or_else(|| ctx.pointer_interact_pos());
+            let pad = at.and_then(|p| app.pad_rects.iter().find(|(_, r)| r.contains(p)).map(|(i, _)| *i)).unwrap_or(app.selected);
+            app.import_midi_to_pads(f.path(), pad);
+        }
+    }
     if !dropped.is_empty() && app.view == crate::app::View::Arrange {
         // On the timeline they become audio clips, on the track under the pointer.
         let (pad, at) = app.arr.drop_at.unwrap_or((None, app.arr.cursor));
@@ -58,6 +71,18 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
 
     egui::Panel::top("top_bar").exact_size(126.0).frame(theme::gutter(8, 8, 8, 3)).show(ui, |ui| top::draw(app, ui));
     egui::Panel::bottom("footer").exact_size(38.0).frame(theme::gutter(10, 10, 2, 6)).show(ui, |ui| footer::draw(app, ui));
+    // The sample browser, down the left of either view.
+    if app.samples.open {
+        let resp = egui::Panel::left("samples").default_size(300.0).size_range(220.0..=640.0).resizable(true).frame(theme::gutter(8, 3, 3, 3)).show(ui, |ui| {
+            let rect = ui.available_rect_before_wrap();
+            theme::card_in(ui, rect, None, |ui| samples::draw(app, ui));
+        });
+        // The list has the keyboard until something else is clicked.
+        if ctx.input(|i| i.pointer.any_pressed()) && ctx.pointer_interact_pos().is_some_and(|p| !resp.response.rect.contains(p)) {
+            app.samples.focused = false;
+        }
+    }
+    samples::drag(app, &ctx);
     let width = ui.available_width();
     if app.view == crate::app::View::Arrange {
         egui::Panel::bottom("zone_c").exact_size(372.0).frame(theme::gutter(3, 8, 3, 3)).show(ui, |ui| buses::draw(app, ui));

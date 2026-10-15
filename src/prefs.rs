@@ -24,6 +24,12 @@ pub struct Prefs {
     pub input_mode: u8,
     /// Light the pads of connected MIDI controllers to match the screen.
     pub pad_lights: bool,
+    /// The sample browser's folders, starred files and the files used lately.
+    pub sample_folders: Vec<crate::app::SampleFolder>,
+    pub favourites: Vec<PathBuf>,
+    pub recent_samples: Vec<PathBuf>,
+    /// Level the sample browser auditions at, in dB.
+    pub preview_db: f32,
 }
 
 impl Default for Prefs {
@@ -38,6 +44,10 @@ impl Default for Prefs {
             input_latency_ms: 0.0,
             input_mode: 0,
             pad_lights: false,
+            sample_folders: Vec::new(),
+            favourites: Vec::new(),
+            recent_samples: Vec::new(),
+            preview_db: -6.0,
         }
     }
 }

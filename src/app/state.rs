@@ -73,6 +73,10 @@ pub enum JobResult {
     Failed(String),
     /// Clips rendered to audio (consolidate or bake), to put back where `to` says.
     Bounced { to: crate::app::BounceTo, l: Vec<f32>, r: Vec<f32>, detached: Vec<PluginTarget> },
+    /// A sample folder has been listed.
+    SamplesListed { root: std::path::PathBuf, entries: Vec<crate::app::SampleEntry> },
+    /// A file from the sample browser decoded for auditioning (audition `seq`).
+    Previewed { seq: u64, data: SampleData },
     /// Recording `source` of the arrangement (saved as `file`) stretched to `bpm`.
     Warped { source: usize, file: String, bpm: f32, mode: crate::stretch::WarpMode, data: SampleData },
     /// A file decoded for the timeline: on `pad`'s track (or a new one) at tick `at`.

@@ -93,6 +93,7 @@ These apply while the piano roll is showing.
 | `F1` | Shortcut help |
 | `F2` | Plugin browser (VST3 and CLAP), to load an instrument on the selected pad |
 | `F3` | Switch between the pads and the song (arrangement) |
+| `F4` | The sample browser |
 | `F9` | Rec onto the song timeline on or off |
 | `Ctrl+,` | Preferences |
 | `Ctrl+S` / `Ctrl+O` | Save and open a project |
@@ -184,3 +185,14 @@ Button CCs act on any value above zero. The mapping is fixed; there is no MIDI l
 | Right-click an audio clip | Gain and fades |
 | Right-click the ruler | Add a marker, insert or delete a bar (or the braced time) |
 | Click / drag a marker | Go there / move it |
+
+## The sample browser
+
+| Shortcut | Action |
+| --- | --- |
+| Click a file | Select it (and hear it, with Audition on) |
+| `Up` / `Down` | The previous or next file, heard as it is selected |
+| `Enter` / double-click | Onto the selected pad, or the timeline at the insert marker |
+| `Shift+Enter` | Onto the next empty pad |
+| Drag a file | Onto a pad, a track, or empty timeline for a new track |
+| `Esc` | Leave the list (the keys go back to the pads) and stop the audition |

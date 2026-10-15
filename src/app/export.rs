@@ -89,6 +89,13 @@ impl App {
             return;
         }
         let job = Offline { plan: self.song_plan(), start, end, tail: true, wet: true, pads: None, master: true };
+        if self.export_to(job, path, depth) {
+            self.status = format!("Exporting {:.1} s of song…", (end - start) as f64 / (self.bpm as f64 / 60.0 * PPQ as f64));
+        }
+    }
+
+    /// Renders `job` to a WAV file at `path`.
+    fn export_to(&mut self, job: Offline, path: &Path, depth: Depth) -> bool {
         let path = path.to_path_buf();
         let sr = self.shared.sample_rate;
         let finish: Finish = Box::new(move |l, r, detached| {
@@ -97,8 +104,69 @@ impl App {
                 .map(|()| JobResult::Exported { path, secs: l.len() as f32 / sr as f32, peak, detached: detached.clone() })
                 .unwrap_or_else(|e| JobResult::ExportFailed { error: e, detached })
         });
-        if self.render_offline(job, finish) {
-            self.status = format!("Exporting {:.1} s of song…", (end - start) as f64 / (self.bpm as f64 / 60.0 * PPQ as f64));
+        self.render_offline(job, finish)
+    }
+
+    /// Asks for a folder, then renders stems into it: one per track (each pad that plays
+    /// in the song, through its bus and effects), or one per bus (the pads routed to it,
+    /// through it). Neither has the master's effects, so the stems add up to the mix
+    /// before the master.
+    pub fn export_stems_dialog(&mut self, by_bus: bool) {
+        if self.arrangement.is_empty() {
+            self.status = "The arrangement is empty: press Chain to song or put loops in first".into();
+            return;
+        }
+        let Some(dir) = rfd::FileDialog::new().set_title("Export stems into").pick_folder() else { return };
+        let (start, end) = self.export_range();
+        let full = self.song_plan();
+        let playing: Vec<usize> = full.tracks.iter().map(|t| t.pad as usize).collect();
+        // (file name, pads).
+        let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+        if by_bus {
+            for &pad in &playing {
+                let bus = crate::shared::bus_index(self.pads[pad].cfg.bus);
+                let name = if bus == crate::shared::MASTER { "Direct to master".to_string() } else { crate::shared::bus_label(bus).to_string() };
+                match groups.iter_mut().find(|g| g.0 == name) {
+                    Some(g) => g.1.push(pad),
+                    None => groups.push((name, vec![pad])),
+                }
+            }
+        } else {
+            for &pad in &playing {
+                let p = &self.pads[pad];
+                let name = if p.name.is_empty() { pad_label(pad) } else { format!("{} {}", pad_label(pad), p.name) };
+                groups.push((name, vec![pad]));
+            }
+        }
+        if groups.is_empty() {
+            self.status = "Nothing in the song plays a pad".into();
+            return;
+        }
+        let project = self.project_dir.as_ref().and_then(|d| d.file_name()).map_or("song".to_string(), |n| n.to_string_lossy().into_owned());
+        self.stem_queue.clear();
+        for (k, (name, pads)) in groups.into_iter().enumerate() {
+            let mut plan = self.song_plan();
+            plan.tracks.retain(|t| pads.contains(&(t.pad as usize)));
+            let safe: String = name.chars().map(|c| if c.is_alphanumeric() || " -_".contains(c) { c } else { '_' }).collect();
+            let path = dir.join(format!("{project} - {:02} {}.wav", k + 1, safe.trim()));
+            let job = Offline { plan, start, end, tail: true, wet: true, pads: Some(pads), master: false };
+            self.stem_queue.push_back((job, path));
+        }
+        self.stems_total = self.stem_queue.len();
+        self.next_stem();
+    }
+
+    /// Starts the next stem waiting, if any. True if one started.
+    pub(super) fn next_stem(&mut self) -> bool {
+        let Some((job, path)) = self.stem_queue.pop_front() else { return false };
+        let depth = self.export_depth;
+        let n = self.stems_total - self.stem_queue.len();
+        if self.export_to(job, &path, depth) {
+            self.status = format!("Exporting stem {n} of {}: {}", self.stems_total, path.file_name().map_or(String::new(), |f| f.to_string_lossy().into_owned()));
+            true
+        } else {
+            self.stem_queue.clear();
+            false
         }
     }
 

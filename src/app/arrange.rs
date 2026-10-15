@@ -243,6 +243,10 @@ pub struct Arrangement {
     /// Names of sections that have their own, by index.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
+    /// Frozen tracks: the clips each had before it was rendered to audio, to be put back
+    /// when it is unfrozen. A frozen pad's instrument plugin is switched off.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub frozen: Vec<(usize, Vec<Clip>)>,
 }
 
 impl Arrangement {
@@ -296,6 +300,10 @@ impl Arrangement {
         self.tidy();
         out.reverse();
         out
+    }
+
+    pub fn is_frozen(&self, pad: usize) -> bool {
+        self.frozen.iter().any(|(p, _)| *p == pad)
     }
 
     /// Every clip, by pad and index.

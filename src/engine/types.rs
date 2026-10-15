@@ -526,6 +526,9 @@ pub enum Cmd {
     Panic,
     /// Play the latency test signal on the output. See [`crate::latency`].
     Ping,
+    /// Audition a file from the sample browser (`None` stops), at this gain: played
+    /// after the master, so it is neither processed nor captured.
+    Preview(Option<Arc<SampleData>>, f32),
 }
 
 /// Things the audio thread must not free itself; shipped back to the UI to drop.

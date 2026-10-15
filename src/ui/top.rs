@@ -9,7 +9,7 @@ use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Ui,
 
 pub fn draw(app: &mut App, ui: &mut Ui) {
     let full = ui.available_rect_before_wrap();
-    let split = full.left() + 600.0;
+    let split = full.left() + 680.0;
     let left = Rect::from_min_max(full.min, Pos2::new(split, full.bottom()));
     let right = Rect::from_min_max(Pos2::new(split + 6.0, full.top()), full.max);
     theme::card_in(ui, left, None, |ui| transport(app, ui));
@@ -106,6 +106,9 @@ fn transport(app: &mut App, ui: &mut Ui) {
         {
             app.toggle_view();
         }
+        if toggle(ui, app.samples.open, "Samples", theme::AMBER).on_hover_text("F4: the sample browser").clicked() {
+            app.toggle_samples();
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button("Help").on_hover_text("F1").clicked() {
                 app.show_help ^= true;
@@ -138,6 +141,19 @@ fn transport(app: &mut App, ui: &mut Ui) {
                 }
                 if ui.button("Export selected pad as WAV…").clicked() {
                     app.export_pad(app.selected);
+                    ui.close();
+                }
+                ui.separator();
+                if ui.button("Import MIDI file…").on_hover_text("Onto the selected pad (and the pads after it), or onto the song timeline in the song view").clicked() {
+                    app.import_midi_dialog();
+                    ui.close();
+                }
+                if ui.button("Export selected pad as MIDI…").clicked() {
+                    app.export_pad_midi(app.selected);
+                    ui.close();
+                }
+                if ui.button("Export song as MIDI…").on_hover_text("Every track's notes over the whole song, a track per pad").clicked() {
+                    app.export_song_midi();
                     ui.close();
                 }
             });

@@ -84,8 +84,9 @@ impl App {
     }
 
     /// Tells the engine which plugin (if any) pad `i` plays.
+    /// Gives the engine pad `i`'s instrument plugin (none while its track is frozen).
     pub fn push_plugin(&mut self, i: usize) {
-        let plugin = self.pads[i].plugin.as_ref().map(|s| self.rt_for(s));
+        let plugin = self.pads[i].plugin.as_ref().filter(|_| !self.arrangement.is_frozen(i)).map(|s| self.rt_for(s));
         self.send(Cmd::SetPadPlugin { pad: i as u16, plugin });
     }
 

@@ -11,6 +11,7 @@ mod fx;
 mod hosted;
 mod latency;
 mod midi;
+mod midifile;
 mod model;
 mod music;
 mod plugins;

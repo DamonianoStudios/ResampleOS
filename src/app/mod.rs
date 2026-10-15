@@ -7,10 +7,12 @@ mod drum;
 mod export;
 mod history;
 mod input;
+mod midi_io;
 mod pads;
 mod play;
 mod plugins;
 mod roll;
+mod samples;
 mod scenes;
 mod song_audio;
 mod song_rec;
@@ -19,6 +21,8 @@ mod vocal;
 
 pub use arrange::{ARR_SNAPS, ArrDrag, ArrangeUi, Arrangement, Clip, OVERVIEW_STEP, View, db_to_gain, pos_text};
 pub use export::Depth;
+pub use midi_io::is_midi;
+pub use samples::{SampleBrowser, SampleEntry, SampleFolder, SampleList, folder_view as samples_folder_view};
 pub use song_audio::BounceTo;
 pub use automation::{AUTO_SNAPS, AutoScope, AutoUi};
 pub use drum::{DrumUi, MacroLayer};
@@ -78,6 +82,10 @@ pub struct App {
     /// Open plugin editor windows, keyed by `PluginSlot::id`.
     editors: Vec<plugins::EditorWin>,
     pub song_rec: song_rec::SongRec,
+    pub samples: SampleBrowser,
+    /// Stems still to render, each after the last, and how many there were.
+    stem_queue: std::collections::VecDeque<(export::Offline, std::path::PathBuf)>,
+    stems_total: usize,
     /// Bus effect plugins, indexed `bus * 3 + slot`.
     pub fx_plugins: Vec<Option<PluginSlot>>,
     /// Analyzer plugins and the bus each watches.
@@ -223,6 +231,9 @@ impl App {
             browser: Browser { open: false, query: String::new(), filter: 0, target: PluginTarget::Pad(0) },
             editors: Vec::new(),
             song_rec: Default::default(),
+            samples: Default::default(),
+            stem_queue: Default::default(),
+            stems_total: 0,
             fx_plugins: (0..NUM_BUSES * 3).map(|_| None).collect(),
             analyzers: (0..crate::shared::NUM_ANALYZERS).map(|_| (None, MASTER)).collect(),
             show_analyzers: false,
@@ -449,7 +460,10 @@ impl App {
         }
 
         while let Ok(job) = self.jobs_rx.try_recv() {
-            self.busy = self.busy.saturating_sub(1);
+            // Browser listings and auditions run quietly, without the busy indicator.
+            if !matches!(job, JobResult::SamplesListed { .. } | JobResult::Previewed { .. }) {
+                self.busy = self.busy.saturating_sub(1);
+            }
             match job {
                 JobResult::Loaded { pad, name, sample, analysis } => {
                     if pad >= self.pads.len() {
@@ -490,6 +504,8 @@ impl App {
                 JobResult::Shifted { key, pad, sample } => self.vocal_shift_done(key, pad, sample),
                 JobResult::SongAudio { pad, at, name, sample } => self.song_audio_loaded(pad, at, name, sample),
                 JobResult::Warped { source, file, bpm, mode, data } => self.warp_done(source, file, bpm, mode, data),
+                JobResult::SamplesListed { root, entries } => self.samples_listed(root, entries),
+                JobResult::Previewed { seq, data } => self.previewed(seq, data),
                 JobResult::Bounced { to, l, r, detached } => {
                     self.export_done(&detached);
                     self.bounce_done(to, l, r);
@@ -499,10 +515,18 @@ impl App {
                     self.export_done(&detached);
                     let db = 20.0 * peak.max(1e-6).log10();
                     let clip = if peak >= 0.999 { " It clips: bring the master down and export again." } else { "" };
-                    self.status = format!("Exported {secs:.1} s to {} (peak {db:.1} dB).{clip}", path.display());
+                    if self.stems_total > 0 && !self.next_stem() {
+                        let folder = path.parent().map_or(String::new(), |d| d.display().to_string());
+                        self.status = format!("Exported {} stems to {folder}", self.stems_total);
+                        self.stems_total = 0;
+                    } else if self.stems_total == 0 {
+                        self.status = format!("Exported {secs:.1} s to {} (peak {db:.1} dB).{clip}", path.display());
+                    }
                 }
                 JobResult::ExportFailed { error, detached } => {
                     self.export_done(&detached);
+                    self.stem_queue.clear();
+                    self.stems_total = 0;
                     self.status = format!("Export failed: {error}");
                 }
             }

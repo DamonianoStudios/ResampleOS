@@ -43,7 +43,7 @@ Nothing here is a promise of dates. Sizes are relative: **S** is a few days of w
 | --- | --- | --- |
 | 0.2 | Arrangement, part 1 | A song timeline per project; loops and patterns placed as clips; play from anywhere; the chain becomes a song in one click; song export |
 | 0.3 | Arrangement, part 2 | Audio clips, recording onto the timeline, performance capture, song-length automation, markers (released in 0.3.0) |
-| 0.4 | Browser, mixer and export | A built-in sample browser (see [below](#sample-browser)), return tracks and sends, more buses and slots, stems, freeze, MIDI file import and export |
+| 0.4 | Browser, mixer and export | A built-in sample browser (see [below](#sample-browser)), return tracks and sends, more buses and slots, stems, freeze, MIDI file import and export (in progress: see [0.4 progress](#04-progress)) |
 | 0.5 | Pro audio | ASIO and exclusive-mode audio, plugin delay compensation, multi-core engine, plugin crash isolation, autosave |
 | 0.6 | Time and MIDI depth | Tempo and time-signature changes, CC, pitch-bend and MPE lanes, groove, chord and scale tools, MIDI out and sync |
 | 0.7 | Sound | Multisample sampler, a wavetable synth, better stock effects, tags and a stock library in the sample browser |
@@ -243,6 +243,18 @@ Done when: with a library of 50,000 files in several folders, a user can find a 
 - **Large libraries.** The first scan of a big drive must not block anything; analysis runs at low priority and results appear as they come.
 - **Screen space.** The panel takes width from the pad matrix or the timeline; it needs to be resizable and to remember its width per view.
 - **Network and cloud folders** (OneDrive placeholders) may download a file just to read it; analysis should skip files that are not on the disk.
+
+### 0.4 progress
+
+| Work | Status |
+| --- | --- |
+| Sample browser: folders, browse, search, favourites, recent, audition, drag and Enter to pads and the timeline, in both views | Done |
+| Sample browser: background analysis (tempo, key, one-shot or loop) with filters, and Sync audition at project tempo | Not started |
+| MIDI file import (pads and timeline) and export (pad and song) | Done |
+| Stem export, by track or by bus | Done |
+| Freeze and unfreeze a track | Done |
+| Return tracks and sends | Not started: needs a decision on how returns relate to today's buses |
+| More buses, and more slots per bus | Not started |
 
 ---
 

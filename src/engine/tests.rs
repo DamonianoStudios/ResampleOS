@@ -1002,3 +1002,22 @@ fn a_crossfade_carries_a_steady_sound_through_the_join() {
     assert!(join(&faded) > full * 0.95, "with one it holds: {} of {full}", join(&faded));
     assert!((faded[48000] - full).abs() < 1e-4 && (faded[144000] - full).abs() < 1e-4);
 }
+
+/// An audition from the sample browser is heard, at its gain, but never reaches the
+/// skip-back buffer (so it can't end up in a resample), and it stops at its end.
+#[test]
+fn a_preview_is_heard_but_not_captured() {
+    let (mut e, mut tx, shared) = rig();
+    let _ = tx.push(Cmd::Preview(Some(tone(4800)), 0.5));
+    let out = run(&mut e, 9600);
+    let p = peak(&out[..9600]);
+    assert!((p - 0.25).abs() < 0.02, "heard at half its level: {p}");
+    assert!(peak(&out[9600 * 2 - 2000..]) < 1e-6, "and it stops at its end");
+    let (l, _) = shared.ring.read(0, 9600);
+    assert!(peak(&l) < 1e-6, "skip-back never hears it");
+    // A new one replaces it; None stops it.
+    let _ = tx.push(Cmd::Preview(Some(tone(48000)), 1.0));
+    run(&mut e, 480);
+    let _ = tx.push(Cmd::Preview(None, 1.0));
+    assert!(peak(&run(&mut e, 960)) < 1e-6);
+}

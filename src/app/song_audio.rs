@@ -16,6 +16,8 @@ pub enum BounceTo {
     Replace { pad: usize, start: u64, clips: Vec<Clip> },
     /// Bake: on a new track named `name`, from `start`, with `clips` (by pad) taken away.
     NewTrack { start: u64, name: String, clips: Vec<(usize, Clip)> },
+    /// Freeze: `pad`'s whole track, `clips`, kept to unfreeze.
+    Freeze { pad: usize, start: u64, clips: Vec<Clip> },
 }
 
 impl App {
@@ -235,7 +237,40 @@ impl App {
         }
     }
 
-    /// A render for consolidate or bake is back: the clips go, the audio comes in.
+    /// Freeze: a track's clips rendered into audio (as the pad sounds on its own, tails and
+    /// all), and its instrument plugin switched off to spare the processor. The clips are
+    /// kept, and come back with Unfreeze.
+    pub fn freeze_track(&mut self, pad: usize) {
+        if self.arrangement.is_frozen(pad) {
+            return;
+        }
+        let clips: Vec<Clip> = self.arrangement.clips(pad).to_vec();
+        if clips.is_empty() {
+            self.status = format!("{} has nothing on the timeline to freeze", pad_label(pad));
+            return;
+        }
+        let picked: Vec<(usize, Clip)> = clips.iter().map(|c| (pad, *c)).collect();
+        let start = clips.iter().map(|c| c.start).min().unwrap_or(0);
+        let end = clips.iter().map(|c| c.end()).max().unwrap_or(0);
+        let job = Offline { plan: self.selection_plan(&picked), start, end, tail: true, wet: false, pads: Some(vec![pad]), master: false };
+        let to = BounceTo::Freeze { pad, start, clips };
+        if self.render_offline(job, Box::new(move |l, r, detached| JobResult::Bounced { to, l, r, detached })) {
+            self.status = format!("Freezing {}…", pad_label(pad));
+        }
+    }
+
+    /// Puts a frozen track's clips back and switches its plugin on again.
+    pub fn unfreeze_track(&mut self, pad: usize) {
+        let Some(i) = self.arrangement.frozen.iter().position(|(p, _)| *p == pad) else { return };
+        let (_, clips) = self.arrangement.frozen.remove(i);
+        let track = self.arrangement.track_mut(pad);
+        *track = clips;
+        self.arr.deselect();
+        self.push_plugin(pad);
+        self.status = format!("{} unfrozen: its clips and its plugin are back", pad_label(pad));
+    }
+
+    /// A render for consolidate, bake or freeze is back: the clips go, the audio comes in.
     pub(super) fn bounce_done(&mut self, to: BounceTo, l: Vec<f32>, r: Vec<f32>) {
         if l.is_empty() {
             self.status = "The render came back empty".into();
@@ -253,6 +288,15 @@ impl App {
                 let source = self.add_audio_source(&name, data);
                 self.put_audio(pad, start, source);
                 self.status = format!("Consolidated {} clip{} into one on {}", clips.len(), if clips.len() == 1 { "" } else { "s" }, pad_label(pad));
+            }
+            BounceTo::Freeze { pad, start, clips } => {
+                let name = format!("{} frozen", if self.pads[pad].name.is_empty() { pad_label(pad) } else { self.pads[pad].name.clone() });
+                self.arrangement.track_mut(pad).clear();
+                self.arrangement.frozen.push((pad, clips));
+                let source = self.add_audio_source(&name, data);
+                self.put_audio(pad, start, source);
+                self.push_plugin(pad);
+                self.status = format!("{} frozen: it plays as audio{}. Unfreeze to edit it again.", pad_label(pad), if self.pads[pad].plugin.is_some() { ", its plugin switched off" } else { "" });
             }
             BounceTo::NewTrack { start, name, clips } => {
                 let Some(track) = self.free_track_pad() else {

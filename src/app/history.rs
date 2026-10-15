@@ -181,7 +181,15 @@ impl App {
         }
         self.scenes = s.scenes;
         self.chain = s.chain;
+        let was_frozen: Vec<usize> = self.arrangement.frozen.iter().map(|f| f.0).collect();
         self.arrangement = s.arrangement;
+        // A track frozen or unfrozen by this step has its plugin switched off or on with it.
+        let now_frozen: Vec<usize> = self.arrangement.frozen.iter().map(|f| f.0).collect();
+        for &pad in was_frozen.iter().filter(|p| !now_frozen.contains(p)).chain(now_frozen.iter().filter(|p| !was_frozen.contains(p))) {
+            if pad < self.pads.len() {
+                self.push_plugin(pad);
+            }
+        }
         self.arr.deselect();
         self.vocal_fx = s.vocal_fx;
         self.vocal.selected = None;
