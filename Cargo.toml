@@ -1,6 +1,6 @@
 [package]
 name = "resampleos"
-version = "0.3.5"
+version = "0.4.1"
 edition = "2024"
 description = "A resample-first pad DAW: commit to audio, capture everything, resample it again."
 readme = "README.md"

@@ -20,12 +20,11 @@ Nothing here is a promise of dates. Sizes are relative: **S** is a few days of w
 
 | Gap | Effect on the user |
 | --- | --- |
-| No sample browser | Samples come in by dragging from Explorer or one file dialog at a time |
 | No MIDI file import or export | Work can't move to or from another DAW |
 | Fixed 4/4, one tempo | No time signature or tempo changes |
 | Windows shared-mode audio only (no ASIO, no exclusive mode) | Latency is too high for tracking through the app |
 | No plugin delay compensation | Lookahead limiters and linear-phase EQs pull their bus out of time |
-| Fixed mixer: four buses, three slots each, no sends | Bigger mixes run out of room; no shared reverb or delay sends |
+| Fixed mixer: four buses, three slots each, no return tracks | Bigger mixes run out of room; sends (since 0.4) can only go to the four buses |
 | No autosave or crash recovery | One plugin crash loses unsaved work |
 | Windows only | Most of the market is on macOS |
 
@@ -43,8 +42,8 @@ Nothing here is a promise of dates. Sizes are relative: **S** is a few days of w
 | --- | --- | --- |
 | 0.2 | Arrangement, part 1 | A song timeline per project; loops and patterns placed as clips; play from anywhere; the chain becomes a song in one click; song export |
 | 0.3 | Arrangement, part 2 | Audio clips, recording onto the timeline, performance capture, song-length automation, markers (released in 0.3.0) |
-| 0.4 | Browser, mixer and export | A built-in sample browser (see [below](#sample-browser)), return tracks and sends, more buses and slots, stems, freeze, MIDI file import and export (in progress; the browser, MIDI files, stems and freeze released early in [0.3.5](releases/v0.3.5.md): see [0.4 progress](#04-progress)) |
-| 0.5 | Pro audio | ASIO and exclusive-mode audio, plugin delay compensation, multi-core engine, plugin crash isolation, autosave |
+| 0.4 | Browser, sends and export | A built-in sample browser (see [below](#sample-browser)), sends into the buses, stems, freeze, MIDI file import and export (released in [0.4.0](releases/v0.4.0.md) and [0.4.1](releases/v0.4.1.md), parts of it early in [0.3.5](releases/v0.3.5.md); see [0.4 progress](#04-progress)) |
+| 0.5 | Pro audio and mixer | ASIO and exclusive-mode audio, plugin delay compensation, multi-core engine, plugin crash isolation, autosave; return tracks, more buses and more slots per bus (moved from 0.4) |
 | 0.6 | Time and MIDI depth | Tempo and time-signature changes, CC, pitch-bend and MPE lanes, groove, chord and scale tools, MIDI out and sync |
 | 0.7 | Sound | Multisample sampler, a wavetable synth, better stock effects, tags and a stock library in the sample browser |
 | 0.8 | Control | MIDI learn everywhere, controller scripts (Launchpad, APC, Push, MPK), Ableton Link |
@@ -249,12 +248,13 @@ Done when: with a library of 50,000 files in several folders, a user can find a 
 | Work | Status |
 | --- | --- |
 | Sample browser: folders, browse, search, favourites, recent, audition, drag and Enter to pads and the timeline, in both views | Done |
-| Sample browser: background analysis (tempo, key, one-shot or loop) with filters, and Sync audition at project tempo | Not started |
+| Sample browser: background analysis (tempo, key, one-shot or loop) with a per-folder cache, filters, Sync audition at project tempo, Project list, folders in Preferences | Done (Sync follows the tempo; matching the key is left for later) |
 | MIDI file import (pads and timeline) and export (pad and song) | Done |
 | Stem export, by track or by bus | Done |
 | Freeze and unfreeze a track | Done |
-| Return tracks and sends | Not started: needs a decision on how returns relate to today's buses |
-| More buses, and more slots per bus | Not started |
+| Sends from every pad into Bus 1-4 and Bus V | Done |
+| Return tracks | Moved to 0.5: sends into the existing buses came first |
+| More buses, and more slots per bus | Moved to 0.5 |
 
 ---
 
@@ -277,7 +277,7 @@ Each area lists what is missing, in priority order. **Priority** is relative to 
 
 | Feature | Why | Priority | Size |
 | --- | --- | --- | --- |
-| Return tracks and sends | Shared reverbs and delays, the usual way to mix | P1 | L |
+| Return tracks (sends into the four buses came in 0.4) | Shared reverbs and delays on channels of their own, the usual way to mix | P1 | L |
 | Variable number of buses, and of slots per bus | Four buses and three slots run out in a full song | P1 | L |
 | Pre- and post-fader inserts, slot reordering by drag | Standard mixer flexibility | P2 | M |
 | Group tracks and bus folders | Organising large sessions | P2 | M |

@@ -78,6 +78,10 @@ Recording and capture (`src/app/song_rec.rs`) work from a history of what was pl
 
 Export (`src/app/export.rs`) builds a second `Engine` with no audio device, sends it the whole project and the plan, and runs it on a background thread as fast as it goes, then lets the tails ring out and writes the WAV. Hosted plugins are moved to it for the duration and handed back to the live engine when it finishes. The same offline render, set up dry (pads at full level, plain buses) or wet (the buses and their effects, a plain master), consolidates and bakes clips.
 
+### Sends
+
+Every sound a pad makes (sample voices, synth voices, drum hits, its plugin, its song audio clips) is rendered into a small stereo scratch buffer after the pad's volume and pan, then added to the pad's bus and to every bus it sends to at that send's level (`send_out` in `render.rs`). Sends land in the bus buffers before `mix_buses` runs, so any bus can be a send's destination, whatever its order.
+
 ### Automation
 
 Automation lives on each loop (`Scene::automation`), so it travels with the loop: undo, project files and the chain all handle it as part of the loop. The engine holds the playing loop's lanes (`Cmd::SetAutomation`, and in `SceneSwap` for the loop coming in, swapped on the same sample as the patterns). Each block it starts from the buses as set by hand (`bus_base`) and writes the lanes' values over them at the playhead; pads it has moved (volume, pan, cutoff, drum knobs) are put back to their hand-set settings (`pad_base`) when the transport stops or no lane moves them any more. A segment's bend is stored on the point it leaves (`AutoPoint::curve`) and shaped by `bend`, a power curve mirrored for negative values.

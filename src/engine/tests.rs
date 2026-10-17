@@ -1008,7 +1008,7 @@ fn a_crossfade_carries_a_steady_sound_through_the_join() {
 #[test]
 fn a_preview_is_heard_but_not_captured() {
     let (mut e, mut tx, shared) = rig();
-    let _ = tx.push(Cmd::Preview(Some(tone(4800)), 0.5));
+    let _ = tx.push(Cmd::Preview(Some(tone(4800)), 0.5, false));
     let out = run(&mut e, 9600);
     let p = peak(&out[..9600]);
     assert!((p - 0.25).abs() < 0.02, "heard at half its level: {p}");
@@ -1016,8 +1016,48 @@ fn a_preview_is_heard_but_not_captured() {
     let (l, _) = shared.ring.read(0, 9600);
     assert!(peak(&l) < 1e-6, "skip-back never hears it");
     // A new one replaces it; None stops it.
-    let _ = tx.push(Cmd::Preview(Some(tone(48000)), 1.0));
+    let _ = tx.push(Cmd::Preview(Some(tone(48000)), 1.0, false));
     run(&mut e, 480);
-    let _ = tx.push(Cmd::Preview(None, 1.0));
+    let _ = tx.push(Cmd::Preview(None, 1.0, false));
     assert!(peak(&run(&mut e, 960)) < 1e-6);
+}
+
+/// A send carries the pad (after its volume) to another bus as well as its own; muting
+/// that bus takes away only what the send added. A send to the pad's own bus does nothing.
+#[test]
+fn a_send_feeds_another_bus() {
+    let render = |send: f32, mute2: bool, own: bool| {
+        let (mut e, mut tx, _) = rig();
+        let mut sends = [0.0; NUM_SENDS];
+        sends[if own { 0 } else { 1 }] = send;
+        let _ = tx.push(Cmd::SetPadCfg { pad: 0, cfg: PadCfg { vol: 1.0, bus: 1, sends, ..PadCfg::default() } });
+        let _ = tx.push(Cmd::SetBus { bus: 1, cfg: BusCfg { mute: mute2, ..BusCfg::default() } });
+        let _ = tx.push(Cmd::SetSample { pad: 0, sample: Some(Arc::new(SampleData::new(vec![0.5; 4800], vec![0.5; 4800]))) });
+        let _ = tx.push(Cmd::PadOn { pad: 0, vel: 1.0, semis: 0.0, key: 1 });
+        let out = run(&mut e, 2400);
+        out[2000]
+    };
+    let dry = render(0.0, false, false);
+    assert!(dry > 0.3, "the pad on its own bus: {dry}");
+    let with = render(0.5, false, false);
+    assert!((with / dry - 1.5).abs() < 0.02, "half again through the send: {}", with / dry);
+    assert!((render(0.5, true, false) / dry - 1.0).abs() < 0.02, "muting the send's bus leaves the pad as it was");
+    assert!((render(1.0, false, true) / dry - 1.0).abs() < 0.02, "a send to its own bus is ignored");
+}
+
+/// A synced preview goes round and round, and while the transport runs it waits for the
+/// next beat to start.
+#[test]
+fn a_synced_preview_loops_and_starts_on_the_beat() {
+    let (mut e, mut tx, _) = rig();
+    let _ = tx.push(Cmd::SetBpm(120.0));
+    let _ = tx.push(Cmd::Play(true));
+    // A quarter of a beat in (a beat is 24000 frames at 120 BPM).
+    run(&mut e, 6000);
+    let flat = Arc::new(SampleData::new(vec![0.5; 4800], vec![0.5; 4800]));
+    let _ = tx.push(Cmd::Preview(Some(flat), 1.0, true));
+    let l: Vec<f32> = run(&mut e, 48000).iter().step_by(2).copied().collect();
+    let first = l.iter().position(|v| v.abs() > 0.1).expect("it plays");
+    assert!((first as i64 - 18000).abs() <= 480, "starts on the next beat: frame {first}");
+    assert!(l[first + 4800 + 100].abs() > 0.4 && l[first + 3 * 4800 + 100].abs() > 0.4, "and goes round");
 }

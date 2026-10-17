@@ -50,7 +50,7 @@ impl Engine {
         self.capture_and_meter(n);
         self.metronome(n);
         self.play_ping(n);
-        self.play_preview(n);
+        self.play_preview(n, tps);
         self.samples_run += n as u64;
     }
 
@@ -178,7 +178,7 @@ impl Engine {
         self.shared.lfo_ticks.store(beat_ticks.to_bits(), Ordering::Relaxed);
         self.shared.lfo_secs.store(seconds.to_bits(), Ordering::Relaxed);
         let any_solo = self.any_solo;
-        let Engine { voices, synths, drums, pads, bufs, scratch, touched, shared, .. } = self;
+        let Engine { voices, synths, drums, pads, bufs, scratch, vscratch, touched, shared, .. } = self;
 
         for v in voices.iter_mut().filter(|v| v.active) {
             let pad = &pads[v.pad as usize];
@@ -221,8 +221,10 @@ impl Engine {
             let kill = 1.0 / (0.004 * sr);
             let looping = cfg.mode == PlayMode::Loop;
             let span = (end - start) as f64;
-            let out = &mut bufs[bus_index(cfg.bus)];
-            let (ol, or) = out.split_at_mut(1);
+            // Into the scratch pair, then out to the bus and the sends.
+            vscratch[0][..n].fill(0.0);
+            vscratch[1][..n].fill(0.0);
+            let (ol, or) = vscratch.split_at_mut(1);
             let (ol, or) = (&mut ol[0], &mut or[0]);
 
             let first = (v.offset as usize).min(n);
@@ -282,6 +284,7 @@ impl Engine {
                 or[i] += b * gr * e;
                 v.pos += rate;
             }
+            send_out(bufs, cfg, vscratch, first..n);
             if v.active {
                 report_level(shared, touched, v.pad, v.env.max(0.05));
                 shared.pad_pos[v.pad as usize].store(v.pos.max(0.0) as u32, Ordering::Relaxed);
@@ -295,11 +298,11 @@ impl Engine {
             v.render(&cfg.synth, sr, &mut scratch[..n]);
             let vol = if audible { cfg.vol } else { 0.0 };
             let (gl, gr) = pan_gains(cfg.pan, vol);
-            let out = &mut bufs[bus_index(cfg.bus)];
             for i in 0..n {
-                out[0][i] += scratch[i] * gl;
-                out[1][i] += scratch[i] * gr;
+                vscratch[0][i] = scratch[i] * gl;
+                vscratch[1][i] = scratch[i] * gr;
             }
+            send_out(bufs, cfg, vscratch, 0..n);
             if v.active {
                 report_level(shared, touched, v.pad, v.level().max(0.05));
             }
@@ -309,9 +312,11 @@ impl Engine {
             let cfg = &pads[v.pad as usize].cfg;
             let audible = !cfg.mute && (!any_solo || cfg.solo);
             let (gl, gr) = pan_gains(cfg.pan, if audible { cfg.vol } else { 0.0 });
-            let out = &mut bufs[bus_index(cfg.bus)];
-            let (l, r) = out.split_at_mut(1);
+            vscratch[0][..n].fill(0.0);
+            vscratch[1][..n].fill(0.0);
+            let (l, r) = vscratch.split_at_mut(1);
             v.render(&mut l[0][..n], &mut r[0][..n], gl, gr);
+            send_out(bufs, cfg, vscratch, 0..n);
             if v.active {
                 report_level(shared, touched, v.pad, v.loudness().clamp(0.05, 1.0));
             }
@@ -349,17 +354,19 @@ impl Engine {
             let (gl, gr) = (vol * (1.0 - cfg.pan).min(1.0), vol * (1.0 + cfg.pan).min(1.0));
             let outs = &rt.buf.outputs;
             let (a, b) = (&outs[0], &outs[outs.len().min(2) - 1]);
-            let dest = &mut self.bufs[bus_index(cfg.bus)];
+            let m = n.min(a.len()).min(b.len());
             let mut peak = 0f32;
-            for i in 0..n.min(a.len()).min(b.len()) {
+            for i in 0..m {
                 // A misbehaving plugin must not poison the mix with NaN or infinity.
                 let (x, y) = (a[i], b[i]);
-                if x.is_finite() && y.is_finite() {
-                    dest[0][i] += x * gl;
-                    dest[1][i] += y * gr;
+                let ok = x.is_finite() && y.is_finite();
+                self.vscratch[0][i] = if ok { x * gl } else { 0.0 };
+                self.vscratch[1][i] = if ok { y * gr } else { 0.0 };
+                if ok {
                     peak = peak.max(x.abs()).max(y.abs());
                 }
             }
+            send_out(&mut self.bufs, &cfg, &self.vscratch, 0..m);
             if peak > 1e-4 {
                 report_level(&self.shared, &mut self.touched, pad as u16, peak.min(1.0));
             }
@@ -613,26 +620,50 @@ impl Engine {
 
     /// The sample browser's audition, straight to the output after everything else, with a
     /// short fade at its end so a cut-off file doesn't click.
-    fn play_preview(&mut self, n: usize) {
+    fn play_preview(&mut self, n: usize, tps: f64) {
         let Some(s) = &self.preview else { return };
         let len = s.len();
-        if self.preview_pos >= len {
+        if len == 0 || (self.preview_pos >= len && !self.preview_sync) {
             if let Some(old) = self.preview.take() {
                 self.trash(Garbage::Sample(old));
             }
             return;
         }
-        let k = n.min(len - self.preview_pos);
+        // A synced preview waits for the next beat while the transport runs.
+        let mut from = 0;
+        if self.preview_wait {
+            if !self.playing {
+                self.preview_wait = false;
+            } else {
+                // Where this block began, in ticks (the sequencer has already moved on).
+                let t0 = self.tick - n as f64 * tps;
+                let beat = PPQ as f64;
+                let next = (t0 / beat).ceil() * beat;
+                let at = ((next - t0) / tps).round();
+                if at >= n as f64 {
+                    return;
+                }
+                from = at.max(0.0) as usize;
+                self.preview_wait = false;
+            }
+        }
         let fade = (self.sr * 0.005) as usize;
+        let looping = self.preview_sync;
         let [l, r] = &mut self.bufs[MASTER];
-        for i in 0..k {
-            let at = self.preview_pos + i;
-            let edge = ((len - at) as f32 / fade.max(1) as f32).min(1.0);
+        for i in from..n {
+            if self.preview_pos >= len {
+                if !looping {
+                    break;
+                }
+                self.preview_pos = 0;
+            }
+            let at = self.preview_pos;
+            let edge = if looping { 1.0 } else { ((len - at) as f32 / fade.max(1) as f32).min(1.0) };
             let g = self.preview_gain * edge;
             l[i] += s.l[at] * g;
             r[i] += s.r[at] * g;
+            self.preview_pos += 1;
         }
-        self.preview_pos += k;
     }
 
     fn metronome(&mut self, n: usize) {
@@ -810,6 +841,22 @@ fn humanized_notes(
                     locks: note.locks,
                 });
             }
+        }
+    }
+}
+
+/// Adds one sound's output (`src`, after its volume and pan) over `range` to its pad's bus,
+/// and to every bus the pad sends to, at the send's level.
+pub(super) fn send_out(bufs: &mut [[Vec<f32>; 2]], cfg: &PadCfg, src: &[Vec<f32>; 2], range: std::ops::Range<usize>) {
+    let own = bus_index(cfg.bus);
+    for (b, out) in bufs.iter_mut().enumerate() {
+        let g = if b == own { 1.0 } else { cfg.send(b) };
+        if g <= 0.0 {
+            continue;
+        }
+        for i in range.clone() {
+            out[0][i] += src[0][i] * g;
+            out[1][i] += src[1][i] * g;
         }
     }
 }

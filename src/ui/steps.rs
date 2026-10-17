@@ -108,6 +108,7 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     });
 
     lock_strip(app, ui);
+    row_menu(app, ui.ctx());
 
     let (rect, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
     if rect.width() < LABEL_W + 80.0 || rect.height() < 60.0 {
@@ -206,10 +207,13 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
     let row = ((pos.y - rect.top()) / row_h) as usize;
     let idx = bank * 16 + 15 - row.min(15);
     if pos.x < grid.left() {
-        // Clicking a row's name selects and auditions the pad.
+        // Clicking a row's name selects and auditions the pad; right-click for its menu.
         if pressed && resp.contains_pointer() {
             app.pad_hit(idx, 0x2000 + idx as u32);
             app.mouse_held = Some((idx as u16, 0x2000 + idx as u32));
+        }
+        if resp.secondary_clicked() {
+            app.step_menu = Some((idx, pos));
         }
         return;
     }
@@ -260,6 +264,33 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
             };
         }
         app.push_pattern(idx);
+    }
+}
+
+/// The menu of a row's name: open the pad's pattern in the piano roll (an audio pad's steps
+/// become a MIDI pad that plays it).
+fn row_menu(app: &mut App, ctx: &egui::Context) {
+    let Some((idx, at)) = app.step_menu else { return };
+    let kind = app.pads[idx].cfg.kind;
+    let mut done = false;
+    let area = egui::Area::new(egui::Id::new("step_row_menu")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
+        egui::Frame::menu(ui.style()).show(ui, |ui| {
+            ui.set_min_width(220.0);
+            ui.label(egui::RichText::new(format!("{} {}", pad_label(idx), app.pads[idx].name)).small().color(theme::DIM));
+            let (label, tip) = match kind {
+                PadKind::Audio => ("Convert to piano roll MIDI", "Moves this pad's steps (in every loop and on the song) to a new MIDI pad that plays this sample chromatically, and opens it in the piano roll"),
+                _ => ("Open in piano roll", "Edits this pad's steps as notes in the piano roll"),
+            };
+            if ui.add_enabled(kind != PadKind::Vocal, egui::Button::new(label)).on_hover_text(tip).clicked() {
+                app.open_in_roll(idx);
+                done = true;
+            }
+        });
+    });
+    // Closes on a choice, or a click anywhere else.
+    let clicked_out = ctx.input(|i| i.pointer.any_pressed()) && ctx.pointer_interact_pos().is_some_and(|p| !area.response.rect.contains(p)) && area.response.rect.area() > 0.0;
+    if done || clicked_out || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        app.step_menu = None;
     }
 }
 

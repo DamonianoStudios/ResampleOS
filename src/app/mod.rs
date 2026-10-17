@@ -22,7 +22,7 @@ mod vocal;
 pub use arrange::{ARR_SNAPS, ArrDrag, ArrangeUi, Arrangement, Clip, OVERVIEW_STEP, View, db_to_gain, pos_text};
 pub use export::Depth;
 pub use midi_io::is_midi;
-pub use samples::{SampleBrowser, SampleEntry, SampleFolder, SampleList, folder_view as samples_folder_view};
+pub use samples::{SampleBrowser, SampleEntry, SampleFolder, SampleInfo, SampleList, folder_view as samples_folder_view};
 pub use song_audio::BounceTo;
 pub use automation::{AUTO_SNAPS, AutoScope, AutoUi};
 pub use drum::{DrumUi, MacroLayer};
@@ -163,6 +163,8 @@ pub struct App {
     /// Which four bars of a long pattern the step sequencer shows.
     pub step_page: u32,
     pub step_paint: Option<bool>,
+    /// The menu of a pad's name in the step sequencer: the pad, and where it opened.
+    pub step_menu: Option<(usize, egui::Pos2)>,
     /// Choke matrix: whether a drag is assigning or clearing.
     pub choke_paint: Option<bool>,
 
@@ -192,6 +194,11 @@ pub struct App {
     seen_starts: u32,
     /// File > New was asked for while the project has unsaved changes.
     pub confirm_new: bool,
+    /// The window was closed while the project has unsaved changes.
+    pub confirm_quit: bool,
+    /// Close without asking (a restart carries the unsaved project across; or it was
+    /// just saved).
+    pub quit_ok: bool,
     /// A latency measurement under way: when it started, and the input monitoring to put
     /// back after it.
     pub latency_probe: Option<(std::time::Instant, u8)>,
@@ -295,6 +302,7 @@ impl App {
             step_bars: 1,
             step_page: 0,
             step_paint: None,
+            step_menu: None,
             choke_paint: None,
             vocal: VocalUi::default(),
             view: View::Pads,
@@ -313,6 +321,8 @@ impl App {
             launch_on_bar: false,
             seen_starts: 0,
             confirm_new: false,
+            confirm_quit: false,
+            quit_ok: false,
             latency_probe: None,
         };
         app.push_all();
@@ -461,7 +471,7 @@ impl App {
 
         while let Ok(job) = self.jobs_rx.try_recv() {
             // Browser listings and auditions run quietly, without the busy indicator.
-            if !matches!(job, JobResult::SamplesListed { .. } | JobResult::Previewed { .. }) {
+            if !matches!(job, JobResult::SamplesListed { .. } | JobResult::Previewed { .. } | JobResult::SamplesAnalysed { .. }) {
                 self.busy = self.busy.saturating_sub(1);
             }
             match job {
@@ -505,7 +515,8 @@ impl App {
                 JobResult::SongAudio { pad, at, name, sample } => self.song_audio_loaded(pad, at, name, sample),
                 JobResult::Warped { source, file, bpm, mode, data } => self.warp_done(source, file, bpm, mode, data),
                 JobResult::SamplesListed { root, entries } => self.samples_listed(root, entries),
-                JobResult::Previewed { seq, data } => self.previewed(seq, data),
+                JobResult::Previewed { seq, data, sync } => self.previewed(seq, data, sync),
+                JobResult::SamplesAnalysed { root, items, left } => self.samples_analysed(root, items, left),
                 JobResult::Bounced { to, l, r, detached } => {
                     self.export_done(&detached);
                     self.bounce_done(to, l, r);
@@ -710,6 +721,11 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // Closing with unsaved changes asks first.
+        if ctx.input(|i| i.viewport().close_requested()) && !self.quit_ok && self.has_unsaved_changes() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.confirm_quit = true;
+        }
         self.poll();
         self.keys(&ctx);
         crate::ui::draw(self, ui);

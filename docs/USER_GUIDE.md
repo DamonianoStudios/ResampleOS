@@ -110,12 +110,15 @@ The **Mod / Warp** tab has three panels.
 
 **Samples** in the top bar (or `F4`) opens a browser for your own sample folders down the left of the screen, beside the pads or the song timeline.
 
-- **Add folder…** adds a folder of samples; add as many as you like. They are remembered with the settings, and listed in the background when the browser first opens (**…** beside the folder lists it again after you add files, or removes it from the browser; the files are never touched).
+- **Add folder…** adds a folder of samples; add as many as you like (or add and remove them under **Sample folders** in Preferences). They are remembered with the settings, and listed in the background when the browser first opens (**…** beside the folder lists it again after you add files, or removes it from the browser; the files are never touched).
+- **Analysis.** Each file is then analysed in the background, a folder at a time: its length, and a loop's tempo and key or a one-shot's note. These show at the right of each file ("92 BPM · Am", "E2 · 0.4 s"). Results are kept in the settings folder, so a file is analysed once (again only if it changes); the footer says how many are left.
 - Pick a folder from the list and click through its subfolders; the path above the list takes you back up.
 - **Search** finds files by name in every folder at once, by every word you type.
-- **★** beside a file makes it a favourite; **Favourites** lists them, and **Recent** the files you used lately.
+- **Filter** narrows the list to **One-shots** or **Loops**, a **Key** (the project's key, or any other: loops in a key that shares at least six of its seven notes, and one-shots whose note is in it), a **BPM** range, and a longest length. A filter searches every folder, with the search words if there are any; files not analysed yet are left out until they are. **Clear** shows everything again.
+- **★** beside a file makes it a favourite; **★** above the list shows the favourites, **Recent** the files you used lately, and **Project** the audio files of the open project (its pads' samples, the song's recordings and vocal takes).
 - **Click** a file to hear it (with **Audition** on, at the level beside it). The `Up` and `Down` arrows move through the list, playing each in turn. Auditions are not processed, captured by skip-back or resampled.
-- **Drag** a file onto a pad, or onto the song timeline (a track, or empty space for a new track). **Double-click** or `Enter` puts it on the selected pad, or on the timeline at the insert marker in the song view; `Shift+Enter` puts it on the next empty pad.
+- **Sync** plays loops stretched to the project tempo (by the warp method chosen in Mod / Warp), going round until you pick another file or press `Esc`; while the transport runs, the loop starts on the next beat, in time with the song. One-shots play as they are.
+- **Drag** a file onto a pad, or onto the song timeline (a track, or empty space for a new track); while dragging, the label says where it will land. **Double-click** or `Enter` puts it on the selected pad, or on the timeline at the insert marker in the song view; `Shift+Enter` puts it on the next empty pad.
 - MIDI files (shown in blue) can be dragged in the same way: onto pads as patterns, or onto the timeline as clips of notes.
 
 ## Key and tempo conform
@@ -214,6 +217,8 @@ The **chain** plays loops one after another. `Shift`+click loops in the order yo
 ## Step sequencer
 
 Press `G`. Each row is a pad of the current bank; each column is a step. Click or drag to paint, right-click a step to cycle normal, accent and soft. **Bars** (1 to 16) and **Grid** set the length and resolution. A pattern longer than four bars is shown four bars at a time: the buttons beside **Bars** pick which four, and with **Follow** on the page turns with the playhead while playing (picking a page by hand turns Follow off). The steps are the same patterns the piano roll edits, so a pad can be worked on in either.
+
+**Right-click a pad's name** on the left for **Open in piano roll** (drum and MIDI pads). On an audio pad it reads **Convert to piano roll MIDI**: the pad's steps, in every loop and on the song timeline, move to a new MIDI pad that plays the audio pad's sample chromatically, and that pad opens in the piano roll. Each step becomes a note at the sample's own pitch, to move up and down from there; the audio pad keeps its sample and settings, and the MIDI pad plays through them (its bus, effects and sends). Undo puts the steps back.
 
 ### Humanize
 
@@ -326,6 +331,12 @@ Each pad is sent either straight to the master (**Thru**), to one of four buses,
 In the **3-Band EQ**, the low band is a shelf below the **Lo** frequency (40 Hz to 600 Hz) and the high band a shelf above the **Hi** frequency (1.5 kHz to 16 kHz). The mid band is a bell centred halfway between the two, and it narrows as you bring them together. Hover over a slider to read its frequency and where the bell sits. Unlike the DJ Isolator, which can remove a band completely, the EQ is for shaping.
 
 Drag a knob to change it, hold `Shift` for fine control, double-click to reset. Keys `1` to `4` and `5` focus a bus; a hardware controller's three knobs follow the slot you last touched.
+
+### Sends
+
+Besides its own bus, a pad can send some of itself to any other bus: put a reverb or a delay on a bus at full mix, and send pads to it to share one space between them. **Sends** in the pad's controls (beside **Bus**) has a level for each of Bus 1 to 4 and Bus V, from off to 0 dB. The send is taken after the pad's volume and pan, so it follows the pad's fader and mute. **Sends** is lit while any is up. Double-click a send's slider, or press **Off** beside it, to turn it off.
+
+Sends are rendered with everything else: a song export or a stem includes them (a pad's sends come out in its own stem), while consolidate and freeze render the pad dry, so the frozen or consolidated audio still feeds the sends when it plays.
 
 ### Sidechain
 
@@ -473,6 +484,8 @@ There are two kinds of going back.
 
 - **Undo and redo** (`Ctrl+Z`, `Ctrl+Y`, or the buttons in the top bar) cover the project as a whole: pad settings, samples, patterns, banks, bus settings, tempo and key. A knob drag or a typed name counts as one step. Sixty-four steps are kept.
 - **Takes** (`Ctrl+Shift+Z`, `Ctrl+Shift+Y`, or the arrows in the Waveform tab) belong to one pad. They step through that pad's baked versions without touching anything else.
+
+Closing ResampleOS with unsaved changes asks **Would you like to save?** **Save** saves the project (asking for a folder if it has none yet) and closes; **Don't Save** closes without saving; **Cancel** goes back to it.
 
 Undo covers every loop and the chain. Moving between loops is not an edit and is not undone. Undo does not cover preferences, what is selected or shown, or the settings inside a plugin's own editor.
 

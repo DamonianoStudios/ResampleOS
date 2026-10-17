@@ -127,6 +127,24 @@ pub struct PadCfg {
     /// The drum synth patch, used while the pad is a drum pad.
     #[serde(default)]
     pub drum: crate::drum::DrumParams,
+    /// Sends: how much of the pad (after its volume and pan) also goes to Bus 1-4 and
+    /// Bus V, 0..1 each, by bus index. A send to the pad's own bus is ignored.
+    #[serde(default)]
+    pub sends: [f32; NUM_SENDS],
+}
+
+/// Buses a pad can send to: Bus 1-4 and Bus V (not the master).
+pub const NUM_SENDS: usize = crate::shared::VOCAL + 1;
+
+impl PadCfg {
+    /// The level of the send to bus `b` (an index into the buses), 0 for the pad's own.
+    pub fn send(&self, b: usize) -> f32 {
+        if b == crate::shared::bus_index(self.bus) { 0.0 } else { self.sends.get(b).copied().unwrap_or(0.0) }
+    }
+
+    pub fn any_send(&self) -> bool {
+        (0..NUM_SENDS).any(|b| self.send(b) > 0.0)
+    }
 }
 
 impl Default for PadCfg {
@@ -158,6 +176,7 @@ impl Default for PadCfg {
             human_time: 0.0,
             human_vel: 0.0,
             drum: crate::drum::DrumParams::default(),
+            sends: [0.0; NUM_SENDS],
         }
     }
 }
@@ -527,8 +546,10 @@ pub enum Cmd {
     /// Play the latency test signal on the output. See [`crate::latency`].
     Ping,
     /// Audition a file from the sample browser (`None` stops), at this gain: played
-    /// after the master, so it is neither processed nor captured.
-    Preview(Option<Arc<SampleData>>, f32),
+    /// after the master, so it is neither processed nor captured. Synced (a loop already
+    /// at the project tempo): it goes round until stopped, and while the transport runs it
+    /// starts on the next beat.
+    Preview(Option<Arc<SampleData>>, f32, bool),
 }
 
 /// Things the audio thread must not free itself; shipped back to the UI to drop.

@@ -204,7 +204,7 @@ impl App {
             if (p.is_empty() && p.cfg == PadCfg::default()) || !wanted(i) {
                 continue;
             }
-            let cfg = if wet { PadCfg { mute: false, solo: false, ..p.cfg } } else { PadCfg { vol: 1.0, pan: 0.0, bus: 0, mute: false, solo: false, ..p.cfg } };
+            let cfg = if wet { PadCfg { mute: false, solo: false, ..p.cfg } } else { PadCfg { vol: 1.0, pan: 0.0, bus: 0, mute: false, solo: false, sends: [0.0; crate::engine::NUM_SENDS], ..p.cfg } };
             send(Cmd::SetPadCfg { pad: i as u16, cfg });
             send(Cmd::SetSample { pad: i as u16, sample: p.sample().cloned() });
         }

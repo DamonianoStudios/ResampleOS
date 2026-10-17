@@ -80,6 +80,7 @@ pub fn draw(app: &mut App, ui: &mut Ui) {
                     ui.selectable_value(&mut cfg.bus, b, bus_name(b));
                 }
             });
+        sends_menu(ui, &mut cfg);
         ui.label("Choke");
         let mut choke = cfg.choke as i32;
         ui.add(egui::DragValue::new(&mut choke).range(0..=32).speed(0.1).custom_formatter(|v, _| {
@@ -368,3 +369,45 @@ fn wave_tab(app: &mut App, ui: &mut Ui, cfg: &mut PadCfg) -> Option<PadAction> {
     );
     action
 }
+
+/// The pad's sends: a level to each bus besides its own, after its volume and pan. Lit
+/// while any is up.
+fn sends_menu(ui: &mut Ui, cfg: &mut crate::engine::PadCfg) {
+    let on = cfg.any_send();
+    let label = egui::RichText::new("Sends").color(if on { theme::BG } else { theme::TEXT });
+    let button = egui::Button::new(label).fill(if on { theme::CYAN } else { theme::WELL });
+    let own = crate::shared::bus_index(cfg.bus);
+    // Clicks inside (a double-click on a slider) must not close it.
+    let config = egui::containers::menu::MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+    egui::containers::menu::MenuButton::from_button(button)
+        .config(config)
+        .ui(ui, |ui| {
+            ui.label(egui::RichText::new("Also send this pad, after its volume and pan, to").small().color(theme::DIM));
+            egui::Grid::new("pad_sends").num_columns(3).show(ui, |ui| {
+                for b in 0..crate::engine::NUM_SENDS {
+                    ui.label(crate::shared::bus_label(b));
+                    if b == own {
+                        ui.label(egui::RichText::new("its own bus").small().color(theme::FAINT));
+                    } else {
+                        let mut db = if cfg.sends[b] > 0.0 { 20.0 * cfg.sends[b].log10() } else { -60.0 };
+                        let r = ui.add(egui::Slider::new(&mut db, -60.0..=0.0).custom_formatter(|v, _| if v <= -59.9 { "Off".into() } else { format!("{v:.1} dB") }));
+                        if r.changed() {
+                            cfg.sends[b] = if db <= -59.9 { 0.0 } else { 10f32.powf(db / 20.0) };
+                        }
+                        // A slider doesn't report double-clicks itself, so look for one over it.
+                        if r.contains_pointer() && ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary)) {
+                            cfg.sends[b] = 0.0;
+                        }
+                        if ui.add_enabled(cfg.sends[b] > 0.0, egui::Button::new("Off").small()).clicked() {
+                            cfg.sends[b] = 0.0;
+                        }
+                    }
+                    ui.end_row();
+                }
+            });
+            ui.label(egui::RichText::new("Put a reverb or delay on a bus at 100% mix and send pads to it. Double-click a slider for off.").small().color(theme::DIM));
+        })
+        .0
+        .on_hover_text("Sends: some of this pad to other buses, such as a shared reverb");
+}
+

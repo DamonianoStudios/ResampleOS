@@ -8,10 +8,48 @@ use eframe::egui::{self, Sense, Stroke, StrokeKind, vec2};
 
 pub fn draw(app: &mut App, ctx: &egui::Context) {
     confirm_new(app, ctx);
+    confirm_quit(app, ctx);
     super::buses::analyzers_window(app, ctx);
     harmonizer(app, ctx);
     choke_matrix(app, ctx);
     help(app, ctx);
+}
+
+/// Asks to save when the window is closed with unsaved changes. Save closes the app once
+/// the project is saved; Don't Save closes it as it is; Cancel goes back to it.
+fn confirm_quit(app: &mut App, ctx: &egui::Context) {
+    if !app.confirm_quit {
+        return;
+    }
+    let modal = egui::Modal::new(egui::Id::new("confirm_quit")).show(ctx, |ui| {
+        ui.set_width(320.0);
+        ui.heading("Would you like to save?");
+        ui.add_space(4.0);
+        ui.label("This project has changes that have not been saved.");
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            if ui.button("Save").clicked() {
+                crate::project::save_dialog(app);
+                app.confirm_quit = false;
+                // A cancelled or failed save stays open, with the project as it was.
+                if !app.has_unsaved_changes() {
+                    app.quit_ok = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+            if ui.button("Don't Save").on_hover_text("Close and lose the changes since the last save").clicked() {
+                app.confirm_quit = false;
+                app.quit_ok = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            if ui.button("Cancel").clicked() {
+                app.confirm_quit = false;
+            }
+        });
+    });
+    if modal.should_close() {
+        app.confirm_quit = false;
+    }
 }
 
 /// Asks before File > New throws away unsaved changes.

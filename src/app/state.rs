@@ -75,8 +75,11 @@ pub enum JobResult {
     Bounced { to: crate::app::BounceTo, l: Vec<f32>, r: Vec<f32>, detached: Vec<PluginTarget> },
     /// A sample folder has been listed.
     SamplesListed { root: std::path::PathBuf, entries: Vec<crate::app::SampleEntry> },
-    /// A file from the sample browser decoded for auditioning (audition `seq`).
-    Previewed { seq: u64, data: SampleData },
+    /// A file from the sample browser decoded for auditioning (audition `seq`), stretched
+    /// to the project tempo when `sync`.
+    Previewed { seq: u64, data: SampleData, sync: bool },
+    /// Analysis of a sample folder's files, a few at a time; `left` still to do.
+    SamplesAnalysed { root: std::path::PathBuf, items: Vec<(std::path::PathBuf, crate::app::SampleInfo)>, left: usize },
     /// Recording `source` of the arrangement (saved as `file`) stretched to `bpm`.
     Warped { source: usize, file: String, bpm: f32, mode: crate::stretch::WarpMode, data: SampleData },
     /// A file decoded for the timeline: on `pad`'s track (or a new one) at tick `at`.

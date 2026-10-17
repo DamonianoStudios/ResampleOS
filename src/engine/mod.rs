@@ -109,6 +109,8 @@ pub struct Engine {
     fx: Vec<Fx>,
     bufs: Vec<[Vec<f32>; 2]>,
     scratch: Vec<f32>,
+    /// One sound's stereo output, on its way to its bus and its sends.
+    vscratch: [Vec<f32>; 2],
     peaks: [f32; NUM_BUSES * 2],
 
     playing: bool,
@@ -159,6 +161,9 @@ pub struct Engine {
     preview: Option<Arc<SampleData>>,
     preview_pos: usize,
     preview_gain: f32,
+    /// A synced preview loops, and is waiting for the next beat to start.
+    preview_sync: bool,
+    preview_wait: bool,
     click_at: i64,
 
     roll_on: bool,
@@ -236,6 +241,7 @@ impl Engine {
             fx: (0..NUM_BUSES * 3).map(|_| Fx::new(sr)).collect(),
             bufs: (0..NUM_BUSES).map(|_| [vec![0.0; MAX_BLOCK], vec![0.0; MAX_BLOCK]]).collect(),
             scratch: vec![0.0; MAX_BLOCK],
+            vscratch: [vec![0.0; MAX_BLOCK], vec![0.0; MAX_BLOCK]],
             peaks: [0.0; NUM_BUSES * 2],
             playing: false,
             bpm: 90.0,
@@ -269,6 +275,8 @@ impl Engine {
             preview: None,
             preview_pos: 0,
             preview_gain: 1.0,
+            preview_sync: false,
+            preview_wait: false,
             click_at: -1,
             roll_on: false,
             roll_ticks: PPQ / 4,
@@ -699,12 +707,14 @@ impl Engine {
                 self.roll_ticks = ticks.max(10);
             }
             Cmd::Ping => self.ping_pos = 0,
-            Cmd::Preview(s, gain) => {
+            Cmd::Preview(s, gain, sync) => {
                 if let Some(old) = std::mem::replace(&mut self.preview, s) {
                     self.trash(Garbage::Sample(old));
                 }
                 self.preview_pos = 0;
                 self.preview_gain = gain;
+                self.preview_sync = sync;
+                self.preview_wait = sync && self.playing;
             }
             Cmd::Panic => {
                 for v in self.voices.iter_mut() {

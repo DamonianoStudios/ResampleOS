@@ -1,4 +1,5 @@
-//! Preferences window: audio device, capture length, interface scale and plugin folders.
+//! Preferences window: audio device, capture length, interface scale, plugin folders and
+//! sample folders.
 
 use super::theme;
 use crate::app::App;
@@ -107,6 +108,26 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
         {
             e.vst3_dirs.push(dir);
         }
+        ui.add_space(8.0);
+
+        // Sample folders apply at once (as in the browser), not on Save.
+        theme::title(ui, "SAMPLE FOLDERS", theme::AMBER);
+        ui.label(egui::RichText::new("Folders the sample browser (F4) lists, searches and analyses.").small().color(theme::DIM));
+        let mut remove = None;
+        for (i, f) in app.prefs.sample_folders.iter().enumerate() {
+            ui.horizontal(|ui| {
+                if ui.small_button("Remove").on_hover_text("From the browser; the files are left alone").clicked() {
+                    remove = Some(i);
+                }
+                ui.label(f.path.display().to_string());
+            });
+        }
+        if let Some(i) = remove {
+            app.remove_sample_folder(i);
+        }
+        if ui.button("Add sample folder…").clicked() {
+            app.add_sample_folder_dialog();
+        }
         ui.add_space(10.0);
         ui.separator();
 
@@ -149,7 +170,11 @@ pub fn draw(app: &mut App, ctx: &egui::Context) {
     }
     if restart {
         match crate::project::relaunch(app) {
-            Ok(()) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Ok(()) => {
+                // The new instance carries the unsaved project across; no need to ask.
+                app.quit_ok = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
             Err(e) => app.status = format!("Could not restart: {e}"),
         }
     }

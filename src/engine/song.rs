@@ -6,7 +6,7 @@
 //! pads play the clips on their tracks instead of their loop patterns.
 
 use super::*;
-use super::render::{pan_gains, pattern_notes, report_level};
+use super::render::{pan_gains, pattern_notes, report_level, send_out};
 
 impl Engine {
     /// Sequences one block in song mode. `span` is its length in ticks.
@@ -159,7 +159,10 @@ impl Engine {
                 let len = a.data.len() as f64;
                 let lo = ((from - t0) / tps).ceil().max(0.0) as usize;
                 let hi = (((to - t0) / tps).ceil().max(0.0) as usize).min(frames);
-                let out = &mut self.bufs[bus_index(cfg.bus)];
+                let (lo, hi) = (lo.min(hi), hi);
+                self.vscratch[0][f0 + lo..f0 + hi].fill(0.0);
+                self.vscratch[1][f0 + lo..f0 + hi].fill(0.0);
+                let out = &mut self.vscratch;
                 let mut peak = 0f32;
                 for i in lo..hi {
                     let t = t0 + i as f64 * tps;
@@ -191,6 +194,7 @@ impl Engine {
                     out[1][f0 + i] += r * gr;
                     peak = peak.max(l.abs()).max(r.abs());
                 }
+                send_out(&mut self.bufs, &cfg, &self.vscratch, f0 + lo..f0 + hi);
                 if peak > 0.0 {
                     report_level(&self.shared, &mut self.touched, track.pad, (peak * cfg.vol * a.gain).max(0.05));
                 }
